@@ -1,0 +1,1 @@
+﻿ExecuteGlobal ActiveDocument.Evaluate("Concat(Gqvc.MacroCode, Chr(10), Gqvc.MacroLine)")
