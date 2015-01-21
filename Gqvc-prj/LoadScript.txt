@@ -4,7 +4,7 @@
 // ***************	First version Date: 19/09/2014	***************
 // ***************	Last modified Date: 03/01/2015	***************
 
-SET Gqvc.ChangeLog.v.Version = '4.0.0';
+SET Gqvc.ChangeLog.v.Version = '4.0.2';
 TRACE Gqvc Version: $(Gqvc.ChangeLog.v.Version);
 ///$tab Change Log
 /* *********************** Change Log ***********************
@@ -28,6 +28,8 @@ Date||Version||Change Description
 17/12/2014||3.1.0||Added new Optional parameter "QVDName" to Gqvc.StoreDataQVD. This means QVDs can now be stored with names other than in-memory tablenames. Also, added new sub-routine "Gqvc.ReduceDataQvd" which helps to reduce QVD to a given number of records.
 18/12/2014||3.1.1||Fixed bug - Gqvc.DeleteDirectory left dummy file when it failed to delete a directory. 
 03/01/2015||4.0.0||Created new tab "Script Macros". Added sub "Gqvc.GetFieldValues" in Field mgmt. "Gqvc.ReduceDataQvd" can now create sample of records. 
+19/01/2015||4.0.1||Used *.* to resolve UNC path instead of having to create/delete '__Dummy_$@#.txt'
+21/01/2015||4.0.2||"Gqvc.Macro.v.CreateRandomName" produces relatively more unique numbers and reduces chances of name collision. Updated "GetFieldValues" & "ReduceDataQvd" to use macro definitions.
 */
 ///$tab Script Macros
 // Macros 
@@ -40,12 +42,12 @@ Syntax $(Gqvc.Macro.v.CreateBitString(2,3));
 SET Gqvc.Macro.v.CreateBitString = If(Len(Trim($2))=0, Repeat(0,$1-1) & 1, Repeat(0,$1-1) & 1 & Repeat(0,$2-$1));
 
 
-SET Gqvc.Macro.v.DefaultIfEmpty = If(Len($1)= 0, $2, $1); // Returns second argument if first argument is empty
-SET Gqvc.Macro.v.FieldExists = IF(Len($1)>0, IsNull(FieldValueCount($1)),-1); // Returns 0 if field exists else -1
-SET Gqvc.Macro.v.TableExists = IF(Len($1)>0, IsNull(TableNumber($1)),-1); // Returns 0 if table exists else -1
-SET Gqvc.Macro.v.FileExists = IF(Len($1)>0, IsNull(FileSize($1)),-1);
+SET Gqvc.Macro.v.DefaultIfEmpty = If(Len(Trim($1))= 0, $2, $1); // Returns second argument if first argument is empty
+SET Gqvc.Macro.v.FieldExists = IF(Len(Trim($1))>0, IsNull(FieldValueCount($1)),-1); // Returns 0 if field exists else -1
+SET Gqvc.Macro.v.TableExists = IF(Len(Trim($1))>0, IsNull(TableNumber($1)),-1); // Returns 0 if table exists else -1
+SET Gqvc.Macro.v.FileExists = IF(Len(Trim($1))>0, IsNull(FileSize($1)),-1);
 SET Gqvc.Macro.v.IsReserved = WildMatch($1,'Gqvc.*','_Gqvc.*'); // Returns integer > 0 if table/field name contains "Gqvc" exists else 0
-SET Gqvc.Macro.v.CreateRandomName = 'Temp_' & IF(Len($1)>0,$1 & '_','') & Ceil(pow(Rand()*100,Rand()*10)); // Creates random name. Argument passed will be part of the name 
+SET Gqvc.Macro.v.CreateRandomName =  IF(Len(Trim($1))>0,$1 & '_','__Temp_') & Ceil(pow((Rand()+1)*10,Rand()+pi())); // Creates random name. Argument passed will be part of the name 
 // ****************************** End Sub ******************************
 
 
@@ -81,7 +83,7 @@ SUB Gqvc.DropTable(TableName)
 	
 	IF $(Gqvc.Macro.v.TableExists('$(TableName)')) = -1 THEN
 	    TRACE Table: [$(TableName)], does not exist. Table cannot be dropped.;
-	ELSEIF $(Gqvc.Macro.v.IsReserved('$(TableName)')) > 0 AND Len('$(Gqvc.Cleanup.Reserved)')=0  THEN
+	ELSEIF $(Gqvc.Macro.v.IsReserved('$(TableName)')) > 0 AND Len('$(Gqvc.Cleanup.v.Reserved)')=0  THEN
 		TRACE Table: [$(TableName)], is reserved. Table will not be dropped.;     
 	ELSE
 	    DROP TABLE [$(TableName)];
@@ -103,7 +105,7 @@ SUB Gqvc.DropField(FieldName)
 	
 	IF $(Gqvc.Macro.v.FieldExists('$(FieldName)')) = -1 THEN
 	    TRACE Field: [$(FieldName)], does not exist. Field cannot be dropped.;
-	ELSEIF $(Gqvc.Macro.v.IsReserved('$(FieldName)')) > 0 AND Len('$(Gqvc.Cleanup.Reserved)')=0  THEN
+	ELSEIF $(Gqvc.Macro.v.IsReserved('$(FieldName)')) > 0 AND Len('$(Gqvc.Cleanup.v.Reserved)')=0  THEN
 		TRACE Field: [$(FieldName)], is reserved. Field will not be dropped.;	    
 	ELSE
 	    DROP Field [$(FieldName)];
@@ -138,7 +140,7 @@ SUB Gqvc.GetFieldValues(FieldName, ReturnVariable, SourceName)
 //		SET _vSource = 'FROM $(SourceName)';	
 	ENDIF
 	
-	SET Gqvc.v.TempTableName = '__Dummy_$@#';
+	LET Gqvc.v.TempTableName = $(Gqvc.Macro.v.CreateRandomName('__Gqvc.GetFieldValues'));
 	
 	[$(Gqvc.v.TempTableName)]:
 	LOAD 
@@ -154,6 +156,7 @@ SUB Gqvc.GetFieldValues(FieldName, ReturnVariable, SourceName)
 
 	SET Gqvc.v.TempTableName = ;
 	SET v.Prefix = ;
+	SET _vSource = ;
 END SUB
 // ****************************** End Sub ******************************
 ///$tab QVD Management
@@ -175,7 +178,7 @@ SUB Gqvc.StoreDataQvd(TableName, QvdPath, QvdName)
 	ELSEIF $(Gqvc.Macro.v.IsReserved('$(TableName)')) > 0 THEN
 		TRACE Table: [$(TableName)], is a reserved table. Table will not be stored.;		
 	ELSE
-		LET Gqvc.Qvd.v.QvdFileName =	IF(LEN(TRIM('$(QvdName)')) > 0,'$(QvdName)','$(TableName)');
+		LET Gqvc.Qvd.v.QvdFileName = $(Gqvc.Macro.v.DefaultIfEmpty('$(QvdName)','$(TableName)'));	//IF(LEN(TRIM('$(QvdName)')) > 0,'$(QvdName)','$(TableName)');
 		STORE [$(TableName)] INTO [$(v.ResolvedDirectoryPath)\$(Gqvc.Qvd.v.QvdFileName).qvd] (qvd);
 		TRACE TableName:[$(TableName)] stored at QvdPath:[$(v.ResolvedDirectoryPath)];
 	END IF
@@ -246,22 +249,18 @@ SUB Gqvc.DeleteAllQvdFilesFromDirectory(DirectoryPath, IncludeSubDirectories)
 	TRACE DeleteAllQvdFilesFromDirectory(DirectoryPath:[$(DirectoryPath)])
 		IncludeSubDirectories:[$(IncludeSubDirectories)] ;
 		
-	LET _IncludeSubDirectories = if(len('$(IncludeSubDirectories)')>0,1,0);
+	LET _IncludeSubDirectories = $(Gqvc.Macro.v.DefaultIfEmpty('$(IncludeSubDirectories)',0)); //if(len('$(IncludeSubDirectories)')>0,1,0);
 
 	CALL Gqvc.ResolvePath('$(DirectoryPath)');
 
-	// Create a dummy file to check valid path. Required as FileTime function does not work for UNC paths.
-	EXECUTE cmd /C echo dummy > "$(v.ResolvedDirectoryPath)\__Dummy_$@#.txt"; 
-
-	IF FileTime('$(DirectoryPath)\__Dummy_$@#.txt') > 0 THEN
-	 	EXECUTE cmd /C del /Q /F "$(v.ResolvedDirectoryPath)\__Dummy_$@#.txt"; // Delete dummy file					 		
+	IF FileTime('$(v.ResolvedDirectoryPath)\*.*') > 0 THEN
 
 		 IF(_IncludeSubDirectories) THEN
 			TRACE Deleting ALL QVDs from Directory $(DirectoryPath) and ALL sub directories;
-			EXECUTE cmd /C DEL /S "$(DirectoryPath)\*.qvd";
+			EXECUTE cmd /C DEL /S "$(v.ResolvedDirectoryPath)\*.qvd";
 		 ELSE
 			  TRACE Deleting ALL QVDs from Directory $(DirectoryPath);
-			  EXECUTE cmd /C DEL "$(DirectoryPath)\*.qvd";
+			  EXECUTE cmd /C DEL "$(v.ResolvedDirectoryPath)\*.qvd";
 		 END IF
 	ELSE
 			TRACE Directory does not exist $(DirectoryPath);
@@ -289,7 +288,7 @@ SUB Gqvc.ReduceDataQvd(QvdName, QvdPath, RecordsToRetain)
 
 	IF FileTime('$(Gqvc.Qvd.v.QvdFileName)') > 0 THEN
 		LET Gqvc.Qvd.v.QvdNoOfRecords.Original = QvdNoOfRecords('$(Gqvc.Qvd.v.QvdFileName)');
-		SET Gqvc.Qvd.v.TempTableName = '__Dummy_$@#';
+		LET Gqvc.Qvd.v.TempTableName = $(Gqvc.Macro.v.CreateRandomName('__Gqvc.ReduceDataQvd')); //'__Dummy_$@#';
 
 		IF $(Gqvc.Qvd.v.RecordsToRetain) > $(Gqvc.Qvd.v.QvdNoOfRecords.Original) THEN
 			TRACE QvdName:[$(QvdName)] already has fewer records [$(Gqvc.Qvd.v.QvdNoOfRecords.Original)] than given limit [$(RecordsToRetain)]. No reduction of data will happen;
@@ -357,21 +356,16 @@ SUB Gqvc.CreateDirectory(DirectoryPath)
 	CALL Gqvc.ResolvePath('$(DirectoryPath)');
 	TRACE Gqvc.CreateDirectory(DirectoryPath:[$(v.ResolvedDirectoryPath)]);
 	
-	IF FileTime('$(v.ResolvedDirectoryPath)') > 0 THEN
+	IF FileTime('$(v.ResolvedDirectoryPath)\*.*') > 0 THEN
 		TRACE Directory Exists $(v.ResolvedDirectoryPath);
 	ELSE
 	    TRACE Creating Directory $(v.ResolvedDirectoryPath);
 	    EXECUTE cmd /C mkdir "$(v.ResolvedDirectoryPath)"; 
 
-		// Create a dummy file to check valid path. Required as FileTime function does not work for UNC paths.
-	 	EXECUTE cmd /C echo dummy > "$(v.ResolvedDirectoryPath)\__Dummy_$@#.txt"; 
-	 	
-		IF IsNull(FileTime('$(v.ResolvedDirectoryPath)\__Dummy_$@#.txt'))  THEN
+		IF IsNull(FileTime('$(v.ResolvedDirectoryPath)\*.*'))  THEN
 			TRACE Error creating directory: $(v.ResolvedDirectoryPath);
 			CALL Gqvc.LogEvent('Error creating directory: $(v.ResolvedDirectoryPath)','E');
 			CALL Gqvc.RaiseFatalError;
-		ELSE
-		 	EXECUTE cmd /C del /Q /F "$(v.ResolvedDirectoryPath)\__Dummy_$@#.txt"; // Delete dummy file				
 	    END IF    
 	END IF
 END SUB
@@ -390,15 +384,11 @@ SUB Gqvc.DeleteDirectory(DirectoryPath)
 
 	TRACE Gqvc.DeleteDirectory(DirectoryPath:[$(v.ResolvedDirectoryPath)]);
 
-	// Create a dummy file to check valid path. Required as FileTime function does not work for UNC paths.
-	EXECUTE cmd /C echo dummy > "$(v.ResolvedDirectoryPath)\__Dummy_$@#.txt"; 	
-
-	IF FileTime('$(v.ResolvedDirectoryPath)\__Dummy_$@#.txt') > 0 THEN
+	IF FileTime('$(v.ResolvedDirectoryPath)\*.*') > 0 THEN
 	        TRACE Deleting directory $(v.ResolvedDirectoryPath);
 	        EXECUTE cmd /C rmdir "$(v.ResolvedDirectoryPath)";
 	        
-		IF FileTime('$(v.ResolvedDirectoryPath)\__Dummy_$@#.txt') > 0 THEN
-			EXECUTE cmd /C del /Q /F "$(v.ResolvedDirectoryPath)\__Dummy_$@#.txt"; // Delete dummy file			
+		IF FileTime('$(v.ResolvedDirectoryPath)\*.*') > 0 THEN
 			TRACE Error deleting directory: $(v.ResolvedDirectoryPath);
 			CALL Gqvc.LogEvent('Error deleting directory: $(v.ResolvedDirectoryPath)','E');
 			CALL Gqvc.RaiseFatalError;
