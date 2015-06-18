@@ -1,701 +1,765 @@
-﻿///$tab Info
-// ***************	Generic Qlikview Components Library	***************
-// ***************	Author: Syed Maqsood	***************
-// ***************	First version Date: 19/09/2014	***************
-// ***************	Last modified Date: 03/01/2015	***************
-
-SET Gqvc.ChangeLog.v.Version = '4.0.2';
-TRACE Gqvc Version: $(Gqvc.ChangeLog.v.Version);
-///$tab Change Log
-/* *********************** Change Log ***********************
-Versioning convention
-X.Y.Z ==>	X --> New functionality: when a new tab is created which enhances Gqvc's capabilities.
-			Y --> New sub-routines: when a new sub-routine is created to extend/improve existing components
-			Z --> Bug fixes
-
-Date||Version||Change Description
-19/09/2014||1.0.0||First release of the Gqvc
-27/10/2014||1.0.1||Fixed "StoreDropAllTablesToQvd" to drop all tables. The loop was using TableName($(i)) instead of TableName(0)
-03/11/2014||1.1.0||Added new sub-routine "Gqvc.ResolvePath"  to check if directory exists
-19/11/2014||2.0.0||Added new sub-routines (tabs: Field Management and Calendar Management) to create a Generic Field and Calendar Management
-20/11/2014||3.0.0||Added new sub-routine "Gqvc.LogEvent" (tab: Log Management) to create event logs
-20/11/2014||3.0.1||Rectified logic to resolve UNC path. Added log events for errors in creating or deleting directories. Call to Gqvc.RaiseFatalError will now result in terminating script execution
-09/12/2014||3.0.2||Gqvc.ResolvePath can now handle trailing '\' in the directory path. E.g., if directory is 'H:\SubFolder\' will now resolve to 'H:\SubFolder'
-09/12/2014||3.0.3||Minor fix to Gqvc.ResolvePath, which now accepts all combinations of paths expect for '.\' when the current directory is the rootfolder
-10/12/2014||3.0.4||Minor fix to Gqvc.CreateDirectory to check successful directory creation for UNC path
-10/12/2014||3.0.5||Minor fix to Gqvc.DeleteDirectory to check successful directory deletion for UNC path
-12/12/2014||3.0.6||Minor fix to Gqvc.DeleteAllQvdFilesFromDirectory for UNC path
-17/12/2014||3.1.0||Added new Optional parameter "QVDName" to Gqvc.StoreDataQVD. This means QVDs can now be stored with names other than in-memory tablenames. Also, added new sub-routine "Gqvc.ReduceDataQvd" which helps to reduce QVD to a given number of records.
-18/12/2014||3.1.1||Fixed bug - Gqvc.DeleteDirectory left dummy file when it failed to delete a directory. 
-03/01/2015||4.0.0||Created new tab "Script Macros". Added sub "Gqvc.GetFieldValues" in Field mgmt. "Gqvc.ReduceDataQvd" can now create sample of records. 
-19/01/2015||4.0.1||Used *.* to resolve UNC path instead of having to create/delete '__Dummy_$@#.txt'
-21/01/2015||4.0.2||"Gqvc.Macro.v.CreateRandomName" produces relatively more unique numbers and reduces chances of name collision. Updated "GetFieldValues" & "ReduceDataQvd" to use macro definitions.
-*/
-///$tab Script Macros
-// Macros 
-// ****************************** Start Sub ******************************
-/*
-Param 1 Positive Integer: Position of 1 in the binary string
-Param 2 Positve Integer: Binary string lenght
-Syntax $(Gqvc.Macro.v.CreateBitString(2,3));
-*/
-SET Gqvc.Macro.v.CreateBitString = If(Len(Trim($2))=0, Repeat(0,$1-1) & 1, Repeat(0,$1-1) & 1 & Repeat(0,$2-$1));
+///$tab Info 
+// ***************	Generic Qlikview Components Library	*************** 
+// ***************	Author: Syed Maqsood	*************** 
+// ***************	First version Date: 19/09/2014	*************** 
+// ***************	Last modified Date: 18/05/2015	*************** 
 
 
-SET Gqvc.Macro.v.DefaultIfEmpty = If(Len(Trim($1))= 0, $2, $1); // Returns second argument if first argument is empty
-SET Gqvc.Macro.v.FieldExists = IF(Len(Trim($1))>0, IsNull(FieldValueCount($1)),-1); // Returns 0 if field exists else -1
-SET Gqvc.Macro.v.TableExists = IF(Len(Trim($1))>0, IsNull(TableNumber($1)),-1); // Returns 0 if table exists else -1
-SET Gqvc.Macro.v.FileExists = IF(Len(Trim($1))>0, IsNull(FileSize($1)),-1);
-SET Gqvc.Macro.v.IsReserved = WildMatch($1,'Gqvc.*','_Gqvc.*'); // Returns integer > 0 if table/field name contains "Gqvc" exists else 0
-SET Gqvc.Macro.v.CreateRandomName =  IF(Len(Trim($1))>0,$1 & '_','__Temp_') & Ceil(pow((Rand()+1)*10,Rand()+pi())); // Creates random name. Argument passed will be part of the name 
-// ****************************** End Sub ******************************
+SET Gqvc.ChangeLog.v.Version = '4.0.3'; 
+TRACE Gqvc Version: $(Gqvc.ChangeLog.v.Version); 
+///$tab Change Log 
+/* *********************** Change Log *********************** 
+Versioning convention 
+X.Y.Z ==>	X --> New functionality: when a new tab is created which enhances Gqvc's capabilities. 
+			Y --> New sub-routines: when a new sub-routine is created to extend/improve existing components 
+			Z --> Bug fixes 
 
 
-// ****************************** Start Sub ******************************
-// Table to be called via VB macro in QVW
-// Use this code in VB macro script: ExecuteGlobal ActiveDocument.Evaluate("Concat(Gqvc.MacroCode, Chr(10), Gqvc.MacroLine)")
-[Gqvc.ClearVariables]:
-LOAD 
-	Gqvc.MacroCode
-	,RowNo() as Gqvc.MacroLine
-INLINE [
-    Gqvc.MacroCode
-	Sub ClearVariables()
-		Set vars = ActiveDocument.GetVariableDescriptions
-		For i = 0 to vars.Count - 1
-		    Set v = vars.Item(i)
-		    ActiveDocument.RemoveVariable v.Name
-		Next
-	End Sub
-];
-// ****************************** End Sub ******************************
-///$tab Table Management
-// Table Management - functions for managing Qlikview in-memory tables.
-
-// ****************************** Start Sub ******************************
-/*
-Drops an in memory table, if it exists.
-@param 1 String. TableName: Name of the table to be dropped.
-@syntax CALL Gqvc.DropTable('TableName');
-*/
-SUB Gqvc.DropTable(TableName)
-	TRACE Gqvc.DropTable(TableName: [$(TableName)]);
-	
-	IF $(Gqvc.Macro.v.TableExists('$(TableName)')) = -1 THEN
-	    TRACE Table: [$(TableName)], does not exist. Table cannot be dropped.;
-	ELSEIF $(Gqvc.Macro.v.IsReserved('$(TableName)')) > 0 AND Len('$(Gqvc.Cleanup.v.Reserved)')=0  THEN
-		TRACE Table: [$(TableName)], is reserved. Table will not be dropped.;     
-	ELSE
-	    DROP TABLE [$(TableName)];
-	    TRACE Table dropped. [$(TableName)];
-	END IF
-END SUB
-// ****************************** End Sub ******************************
-///$tab Field Management
-// Field Management - functions for managing Qlikview in-memory fields.
-
-// ****************************** Start Sub ******************************
-/*
-Drops an in memory field, if it exists.
-@param 1 String. FieldName: Name of the field to be dropped.
-@syntax CALL Gqvc.DropField('FieldName');
-*/
-SUB Gqvc.DropField(FieldName)
-	TRACE Gqvc.DropField(FieldName: [$(FieldName)]);
-	
-	IF $(Gqvc.Macro.v.FieldExists('$(FieldName)')) = -1 THEN
-	    TRACE Field: [$(FieldName)], does not exist. Field cannot be dropped.;
-	ELSEIF $(Gqvc.Macro.v.IsReserved('$(FieldName)')) > 0 AND Len('$(Gqvc.Cleanup.v.Reserved)')=0  THEN
-		TRACE Field: [$(FieldName)], is reserved. Field will not be dropped.;	    
-	ELSE
-	    DROP Field [$(FieldName)];
-	    TRACE Field dropped. [$(FieldName)];
-	END IF
-END SUB
-// ****************************** End Sub ******************************
+Date||Version||Change Description 
+19/09/2014||1.0.0||First release of the Gqvc 
+27/10/2014||1.0.1||Fixed "StoreDropAllTablesToQvd" to drop all tables. The loop was using TableName($(i)) instead of TableName(0) 
+03/11/2014||1.1.0||Added new sub-routine "Gqvc.ResolvePath"  to check if directory exists 
+19/11/2014||2.0.0||Added new sub-routines (tabs: Field Management and Calendar Management) to create a Generic Field and Calendar Management 
+20/11/2014||3.0.0||Added new sub-routine "Gqvc.LogEvent" (tab: Log Management) to create event logs 
+20/11/2014||3.0.1||Rectified logic to resolve UNC path. Added log events for errors in creating or deleting directories. Call to Gqvc.RaiseFatalError will now result in terminating script execution 
+09/12/2014||3.0.2||Gqvc.ResolvePath can now handle trailing '\' in the directory path. E.g., if directory is 'H:\SubFolder\' will now resolve to 'H:\SubFolder' 
+09/12/2014||3.0.3||Minor fix to Gqvc.ResolvePath, which now accepts all combinations of paths expect for '.\' when the current directory is the rootfolder 
+10/12/2014||3.0.4||Minor fix to Gqvc.CreateDirectory to check successful directory creation for UNC path 
+10/12/2014||3.0.5||Minor fix to Gqvc.DeleteDirectory to check successful directory deletion for UNC path 
+12/12/2014||3.0.6||Minor fix to Gqvc.DeleteAllQvdFilesFromDirectory for UNC path 
+17/12/2014||3.1.0||Added new Optional parameter "QVDName" to Gqvc.StoreDataQVD. This means QVDs can now be stored with names other than in-memory tablenames. Also, added new sub-routine "Gqvc.ReduceDataQvd" which helps to reduce QVD to a given number of records. 
+18/12/2014||3.1.1||Fixed bug - Gqvc.DeleteDirectory left dummy file when it failed to delete a directory.  
+03/01/2015||4.0.0||Created new tab "Script Macros". Added sub "Gqvc.GetFieldValues" in Field mgmt. "Gqvc.ReduceDataQvd" can now create sample of records.  
+19/01/2015||4.0.1||Used *.* to resolve UNC path instead of having to create/delete '__Dummy_$@#.txt' 
+21/01/2015||4.0.2||"Gqvc.Macro.v.CreateRandomName" produces relatively more unique numbers and reduces chances of name collision. Updated "GetFieldValues" & "ReduceDataQvd" to use macro definitions. 
+18/06/2015||4.0.3||Fix for Gqvc.LogEvent to handle filename with spaces, Gqvc.ResolvePath to handle non-existing directories when called by CreateDirectory.
+18/06/2015||4.0.3||Added Gqvc.CleanupMacros to cleanup routine and removed Gqvc.DeleteDirectory routine due to security risk
+*/ 
+///$tab Script Macros 
+// Macros  
+// ****************************** Start Sub ****************************** 
+/* 
+Param 1 Positive Integer: Position of 1 in the binary string 
+Param 2 Positve Integer: Binary string lenght 
+Syntax $(Gqvc.Macro.v.CreateBitString(2,3)); 
+*/ 
+SET Gqvc.Macro.v.CreateBitString = If(Len(Trim($2))=0, Repeat(0,$1-1) & 1, Repeat(0,$1-1) & 1 & Repeat(0,$2-$1)); 
 
 
-// ****************************** Start Sub ******************************
-/**
-Get min & max values of a Field. The values are set in variables names using parameter 2 or fieldname as the prefix. For example, if parameter 2 is 'vStat', the set variables will be:
 
-	vStat.Min  =  the Min value of the field.
-	vStat.Max  =  the Max value of the field.
-    
-@syntax Gqvc.GetFieldValues('LastUpdate', ['vStats'], ['Transactions.qvd']);
 
-@param 1 String. The field name.
-@param 2 String, Optional. Variable prefix name in which to return values. Variables created will prefix.Max, prefix.Min.
-@param 3 String, Optional. Source that contains the field. If Source ends with '.qvd', source is assumed to be a QVD. If not, Source is a RESIDENT table. If omitted, all values of field are the source.
-*/
-SUB Gqvc.GetFieldValues(FieldName, ReturnVariable, SourceName)
+SET Gqvc.Macro.v.DefaultIfEmpty = If(Len(Trim($1))= 0, $2, $1); // Returns second argument if first argument is empty 
+SET Gqvc.Macro.v.FieldExists = IF(Len(Trim($1))>0, IsNull(FieldValueCount($1)),-1); // Returns 0 if field exists else -1 
+SET Gqvc.Macro.v.TableExists = IF(Len(Trim($1))>0, IsNull(TableNumber($1)),-1); // Returns 0 if table exists else -1 
+SET Gqvc.Macro.v.FileExists = IF(Len(Trim($1))>0, IsNull(FileSize($1)),-1); 
+SET Gqvc.Macro.v.IsReserved = WildMatch($1,'Gqvc.*','_Gqvc.*'); // Returns integer > 0 if table/field name contains "Gqvc" exists else 0 
+SET Gqvc.Macro.v.CreateRandomName =  IF(Len(Trim($1))>0,$1 & '_','__Temp_') & Ceil(pow((Rand()+1)*10,Rand()+pi())); // Creates random name. Argument passed will be part of the name  
+// ****************************** End Sub ****************************** 
 
-	IF Len(Trim('$(SourceName)')) = 0 THEN
-		SET _vSource = ";LOAD FieldValue('$(FieldName)', recno()) as [$(FieldName)] AUTOGENERATE FieldValueCount('$(FieldName)')";
-	ELSEIF WildMatch('$(SourceName)', '*.???') = 0 THEN
-		SET _vSource = 'RESIDENT $(SourceName)';
-	ELSEIF WildMatch('$(SourceName)', '*.qvd') > 0 THEN
-		SET _vSource = 'FROM [$(SourceName)] (qvd)';
-//	ELSE // Can be used to assume text file as source
-//		SET _vSource = 'FROM $(SourceName)';	
-	ENDIF
-	
-	LET Gqvc.v.TempTableName = $(Gqvc.Macro.v.CreateRandomName('__Gqvc.GetFieldValues'));
-	
-	[$(Gqvc.v.TempTableName)]:
-	LOAD 
-		Max([$(FieldName)]) as _maxval,
-		Min([$(FieldName)]) as _minval	
-	$(_vSource);
-	
-	LET v.Prefix = $(Gqvc.Macro.v.DefaultIfEmpty('$(ReturnVariable)','$(FieldName)'));
-	LET $(v.Prefix).Max = peek('_maxval');
-	LET $(v.Prefix).Min = peek('_minval');
 
-	DROP table [$(Gqvc.v.TempTableName)];
 
-	SET Gqvc.v.TempTableName = ;
-	SET v.Prefix = ;
-	SET _vSource = ;
-END SUB
-// ****************************** End Sub ******************************
-///$tab QVD Management
-// QVD Management - Functions for managing QVDs
 
-// ****************************** Start Sub ******************************
-// Stores in memory table to QVD file.
-// Parameters:
-// @param 1 String. TableName: Name of the table to be written to QVD.
-// @param 2 String. QvdPath: Path of the QVD file to be written.
-// @param 3 String, Optional. QvdName: Name of the QVD file, to be saved, if different from the TableName.
-// @syntax CALL Gqvc.StoreDataQvd('TableName', 'QvdPath');
-SUB Gqvc.StoreDataQvd(TableName, QvdPath, QvdName)
-	CALL Gqvc.CreateDirectory('$(QvdPath)');	
-	TRACE Gqvc.StoreDataQvd(TableName:[$(TableName)], QvdPath:[$(v.ResolvedDirectoryPath)]);
+// ****************************** Start Sub ****************************** 
+// Table to be called via VB macro in QVW 
+// Use this code in VB macro script: ExecuteGlobal ActiveDocument.Evaluate("Concat(Gqvc.MacroCode, Chr(10), Gqvc.MacroLine)") 
+[Gqvc.ClearVariables]: 
+LOAD  
+	Gqvc.MacroCode 
+	,RowNo() as Gqvc.MacroLine 
+INLINE [ 
+    Gqvc.MacroCode 
+	Sub ClearVariables() 
+		Set vars = ActiveDocument.GetVariableDescriptions 
+		For i = 0 to vars.Count - 1 
+		    Set v = vars.Item(i) 
+		    ActiveDocument.RemoveVariable v.Name 
+		Next 
+	End Sub 
+]; 
+// ****************************** End Sub ****************************** 
+///$tab Table Management 
+// Table Management - functions for managing Qlikview in-memory tables. 
 
-	IF $(Gqvc.Macro.v.TableExists('$(TableName)')) = -1 THEN
-	    TRACE Table: [$(TableName)], does not exist. Table cannot be stored.;		
-	ELSEIF $(Gqvc.Macro.v.IsReserved('$(TableName)')) > 0 THEN
-		TRACE Table: [$(TableName)], is a reserved table. Table will not be stored.;		
-	ELSE
-		LET Gqvc.Qvd.v.QvdFileName = $(Gqvc.Macro.v.DefaultIfEmpty('$(QvdName)','$(TableName)'));	//IF(LEN(TRIM('$(QvdName)')) > 0,'$(QvdName)','$(TableName)');
-		STORE [$(TableName)] INTO [$(v.ResolvedDirectoryPath)\$(Gqvc.Qvd.v.QvdFileName).qvd] (qvd);
-		TRACE TableName:[$(TableName)] stored at QvdPath:[$(v.ResolvedDirectoryPath)];
-	END IF
-	
-	// Cleanup..
-	LET Gqvc.Qvd.v.QvdFileName = ;
-END SUB
-// ****************************** End Sub ******************************
 
-// ****************************** Start Sub ******************************
-// Stores in memory table to QVD file.  Drops in memory table after persisting to QVD.
-// Parameters:
-// @param 1 String. TableName: Name of the table to be written to QVD.
-// @param 2 String. QvdPath: Path of the QVD file to be written.
-// @param 3 String, Optional. QvdName: Name of the QVD file, to be saved, if different from the TableName.
-// @syntax CALL Gqvc.StoreDropDataQvd('TableName', 'QvdPath');
-SUB Gqvc.StoreDropDataQvd(TableName, QvdPath, QvdName)
-	TRACE Gqvc.StoreDropDataQvd(TableName:[$(TableName)], QvdPath:[$(QvdPath)]);
-    CALL Gqvc.StoreDataQvd('$(TableName)','$(QvdPath)','$(QvdName)');
-    CALL Gqvc.DropTable('$(TableName)');
-END SUB
-// ****************************** End Sub ******************************
+// ****************************** Start Sub ****************************** 
+/* 
+Drops an in memory table, if it exists. 
+@param 1 String. TableName: Name of the table to be dropped. 
+@syntax CALL Gqvc.DropTable('TableName'); 
+*/ 
+SUB Gqvc.DropTable(TableName) 
+	TRACE Gqvc.DropTable(TableName: [$(TableName)]); 
+	 
+	IF $(Gqvc.Macro.v.TableExists('$(TableName)')) = -1 THEN 
+	    TRACE Table: [$(TableName)], does not exist. Table cannot be dropped.; 
+	ELSEIF $(Gqvc.Macro.v.IsReserved('$(TableName)')) > 0 AND Len('$(Gqvc.Cleanup.v.Reserved)')=0  THEN 
+		TRACE Table: [$(TableName)], is reserved. Table will not be dropped.;      
+	ELSE 
+	    DROP TABLE [$(TableName)]; 
+	    TRACE Table dropped. [$(TableName)]; 
+	END IF 
+END SUB 
+// ****************************** End Sub ****************************** 
+///$tab Field Management 
+// Field Management - functions for managing Qlikview in-memory fields. 
 
-// ****************************** Start Sub ******************************
-// Stores all in memory tables to QVD.
-// Parameters:
-// @param 1 String. QvdDirectory: root folder for Qvd storage.
-// @syntax CALL Gqvc.StoreAllTablesToQvd('QvdDirectory');
-SUB Gqvc.StoreAllTablesToQvd(QvdDirectory)
-        TRACE StoreAllTablesToQvd(QvdDirectory:[$(QvdDirectory)]);
-		
-        FOR i = 0 TO NoOfTables()-1
-			CALL Gqvc.StoreDataQvd(TableName(i),QvdDirectory);
-        NEXT
+
+// ****************************** Start Sub ****************************** 
+/* 
+Drops an in memory field, if it exists. 
+@param 1 String. FieldName: Name of the field to be dropped. 
+@syntax CALL Gqvc.DropField('FieldName'); 
+*/ 
+SUB Gqvc.DropField(FieldName) 
+	TRACE Gqvc.DropField(FieldName: [$(FieldName)]); 
+	 
+	IF $(Gqvc.Macro.v.FieldExists('$(FieldName)')) = -1 THEN 
+	    TRACE Field: [$(FieldName)], does not exist. Field cannot be dropped.; 
+	ELSEIF $(Gqvc.Macro.v.IsReserved('$(FieldName)')) > 0 AND Len('$(Gqvc.Cleanup.v.Reserved)')=0  THEN 
+		TRACE Field: [$(FieldName)], is reserved. Field will not be dropped.;	     
+	ELSE 
+	    DROP Field [$(FieldName)]; 
+	    TRACE Field dropped. [$(FieldName)]; 
+	END IF 
+END SUB 
+// ****************************** End Sub ****************************** 
+
+
+
+
+// ****************************** Start Sub ****************************** 
+/** 
+Get min & max values of a Field. The values are set in variables names using parameter 2 or fieldname as the prefix. For example, if parameter 2 is 'vStat', the set variables will be: 
+
+
+	vStat.Min  =  the Min value of the field. 
+	vStat.Max  =  the Max value of the field. 
      
-     // Cleanup..
-     SET i=; 
-END SUB
-// ****************************** End Sub ******************************
-
-// ****************************** Start Sub ******************************
-// Stores all in memory tables to QVD and drops the tables.
-// Parameters:
-// @param 1 String. QvdDirectory: root folder for Qvd storage.
-// @syntax CALL Gqvc.StoreDropAllTablesToQvd('QvdDirectory');
-SUB Gqvc.StoreDropAllTablesToQvd(QvdDirectory)
-        TRACE StoreDropAllTablesToQvd(QvdDirectory:[$(QvdDirectory)]);
-		
-        FOR i = 0 TO NoOfTables()-1
-			CALL Gqvc.StoreDropDataQvd(TableName(i),QvdDirectory);
-        NEXT
-     // Cleanup..
-     SET i=; 
-END SUB
-// ****************************** End Sub ******************************
+@syntax Gqvc.GetFieldValues('LastUpdate', ['vStats'], ['Transactions.qvd']); 
 
 
-// ****************************** Start Sub ******************************
-/*
-Removes all *.qvd files from a directory (and sub directories if parameter is IncludeSubDirectories is set to True() or a none zero value).
+@param 1 String. The field name. 
+@param 2 String, Optional. Variable prefix name in which to return values. Variables created will prefix.Max, prefix.Min. 
+@param 3 String, Optional. Source that contains the field. If Source ends with '.qvd', source is assumed to be a QVD. If not, Source is a RESIDENT table. If omitted, all values of field are the source. 
+*/ 
+SUB Gqvc.GetFieldValues(FieldName, ReturnVariable, SourceName) 
 
-@param 1 String. DirectoryPath: The path of the directory.
-@param 2 Boolean, Optional. IncludeSubDirectories: Delete files from all subdirectories too.  Default is false.
 
-@syntax CALL Gqvc.DeleteAllQvdFilesFromDirectory('DirectoryPath', ['IncludeSubDirectories']);
-*/
-SUB Gqvc.DeleteAllQvdFilesFromDirectory(DirectoryPath, IncludeSubDirectories)
-	TRACE DeleteAllQvdFilesFromDirectory(DirectoryPath:[$(DirectoryPath)])
-		IncludeSubDirectories:[$(IncludeSubDirectories)] ;
-		
-	LET _IncludeSubDirectories = $(Gqvc.Macro.v.DefaultIfEmpty('$(IncludeSubDirectories)',0)); //if(len('$(IncludeSubDirectories)')>0,1,0);
+	IF Len(Trim('$(SourceName)')) = 0 THEN 
+		SET _vSource = ";LOAD FieldValue('$(FieldName)', recno()) as [$(FieldName)] AUTOGENERATE FieldValueCount('$(FieldName)')"; 
+	ELSEIF WildMatch('$(SourceName)', '*.???') = 0 THEN 
+		SET _vSource = 'RESIDENT $(SourceName)'; 
+	ELSEIF WildMatch('$(SourceName)', '*.qvd') > 0 THEN 
+		SET _vSource = 'FROM [$(SourceName)] (qvd)'; 
+//	ELSE // Can be used to assume text file as source 
+//		SET _vSource = 'FROM $(SourceName)';	 
+	ENDIF 
+	 
+	LET Gqvc.v.TempTableName = $(Gqvc.Macro.v.CreateRandomName('__Gqvc.GetFieldValues')); 
+	 
+	[$(Gqvc.v.TempTableName)]: 
+	LOAD  
+		Max([$(FieldName)]) as _maxval, 
+		Min([$(FieldName)]) as _minval	 
+	$(_vSource); 
+	 
+	LET v.Prefix = $(Gqvc.Macro.v.DefaultIfEmpty('$(ReturnVariable)','$(FieldName)')); 
+	LET $(v.Prefix).Max = peek('_maxval'); 
+	LET $(v.Prefix).Min = peek('_minval'); 
 
-	CALL Gqvc.ResolvePath('$(DirectoryPath)');
 
-	IF FileTime('$(v.ResolvedDirectoryPath)\*.*') > 0 THEN
+	DROP table [$(Gqvc.v.TempTableName)]; 
 
-		 IF(_IncludeSubDirectories) THEN
-			TRACE Deleting ALL QVDs from Directory $(DirectoryPath) and ALL sub directories;
-			EXECUTE cmd /C DEL /S "$(v.ResolvedDirectoryPath)\*.qvd";
-		 ELSE
-			  TRACE Deleting ALL QVDs from Directory $(DirectoryPath);
-			  EXECUTE cmd /C DEL "$(v.ResolvedDirectoryPath)\*.qvd";
-		 END IF
-	ELSE
-			TRACE Directory does not exist $(DirectoryPath);
+
+	SET Gqvc.v.TempTableName = ; 
+	SET v.Prefix = ; 
+	SET _vSource = ; 
+END SUB 
+// ****************************** End Sub ****************************** 
+///$tab QVD Management 
+// QVD Management - Functions for managing QVDs 
+
+
+// ****************************** Start Sub ****************************** 
+// Stores in memory table to QVD file. 
+// Parameters: 
+// @param 1 String. TableName: Name of the table to be written to QVD. 
+// @param 2 String. QvdPath: Path of the QVD file to be written. 
+// @param 3 String, Optional. QvdName: Name of the QVD file, to be saved, if different from the TableName. 
+// @syntax CALL Gqvc.StoreDataQvd('TableName', 'QvdPath'); 
+SUB Gqvc.StoreDataQvd(TableName, QvdPath, QvdName) 
+	CALL Gqvc.CreateDirectory('$(QvdPath)');	 
+	TRACE Gqvc.StoreDataQvd(TableName:[$(TableName)], QvdPath:[$(v.ResolvedDirectoryPath)]); 
+
+
+	IF $(Gqvc.Macro.v.TableExists('$(TableName)')) = -1 THEN 
+	    TRACE Table: [$(TableName)], does not exist. Table cannot be stored.;		 
+	ELSEIF $(Gqvc.Macro.v.IsReserved('$(TableName)')) > 0 THEN 
+		TRACE Table: [$(TableName)], is a reserved table. Table will not be stored.;		 
+	ELSE 
+		LET Gqvc.Qvd.v.QvdFileName = $(Gqvc.Macro.v.DefaultIfEmpty('$(QvdName)','$(TableName)'));	//IF(LEN(TRIM('$(QvdName)')) > 0,'$(QvdName)','$(TableName)'); 
+		STORE [$(TableName)] INTO [$(v.ResolvedDirectoryPath)\$(Gqvc.Qvd.v.QvdFileName).qvd] (qvd); 
+		TRACE TableName:[$(TableName)] stored at QvdPath:[$(v.ResolvedDirectoryPath)]; 
+	END IF 
+	 
+	// Cleanup.. 
+	LET Gqvc.Qvd.v.QvdFileName = ; 
+END SUB 
+// ****************************** End Sub ****************************** 
+
+
+// ****************************** Start Sub ****************************** 
+// Stores in memory table to QVD file.  Drops in memory table after persisting to QVD. 
+// Parameters: 
+// @param 1 String. TableName: Name of the table to be written to QVD. 
+// @param 2 String. QvdPath: Path of the QVD file to be written. 
+// @param 3 String, Optional. QvdName: Name of the QVD file, to be saved, if different from the TableName. 
+// @syntax CALL Gqvc.StoreDropDataQvd('TableName', 'QvdPath'); 
+SUB Gqvc.StoreDropDataQvd(TableName, QvdPath, QvdName) 
+	TRACE Gqvc.StoreDropDataQvd(TableName:[$(TableName)], QvdPath:[$(QvdPath)]); 
+    CALL Gqvc.StoreDataQvd('$(TableName)','$(QvdPath)','$(QvdName)'); 
+    CALL Gqvc.DropTable('$(TableName)'); 
+END SUB 
+// ****************************** End Sub ****************************** 
+
+
+// ****************************** Start Sub ****************************** 
+// Stores all in memory tables to QVD. 
+// Parameters: 
+// @param 1 String. QvdDirectory: root folder for Qvd storage. 
+// @syntax CALL Gqvc.StoreAllTablesToQvd('QvdDirectory'); 
+SUB Gqvc.StoreAllTablesToQvd(QvdDirectory) 
+        TRACE StoreAllTablesToQvd(QvdDirectory:[$(QvdDirectory)]); 
+		 
+        FOR i = 0 TO NoOfTables()-1 
+			CALL Gqvc.StoreDataQvd(TableName(i),QvdDirectory); 
+        NEXT 
+      
+     // Cleanup.. 
+     SET i=;  
+END SUB 
+// ****************************** End Sub ****************************** 
+
+
+// ****************************** Start Sub ****************************** 
+// Stores all in memory tables to QVD and drops the tables. 
+// Parameters: 
+// @param 1 String. QvdDirectory: root folder for Qvd storage. 
+// @syntax CALL Gqvc.StoreDropAllTablesToQvd('QvdDirectory'); 
+SUB Gqvc.StoreDropAllTablesToQvd(QvdDirectory) 
+        TRACE StoreDropAllTablesToQvd(QvdDirectory:[$(QvdDirectory)]); 
+		 
+        FOR i = 0 TO NoOfTables()-1 
+			CALL Gqvc.StoreDropDataQvd(TableName(i),QvdDirectory); 
+        NEXT 
+     // Cleanup.. 
+     SET i=;  
+END SUB 
+// ****************************** End Sub ****************************** 
+
+
+
+
+// ****************************** Start Sub ****************************** 
+/* 
+Removes all *.qvd files from a directory (and sub directories if parameter is IncludeSubDirectories is set to True() or a none zero value). 
+
+
+@param 1 String. DirectoryPath: The path of the directory. 
+@param 2 Boolean, Optional. IncludeSubDirectories: Delete files from all subdirectories too.  Default is false. 
+
+
+@syntax CALL Gqvc.DeleteAllQvdFilesFromDirectory('DirectoryPath', ['IncludeSubDirectories']); 
+*/ 
+SUB Gqvc.DeleteAllQvdFilesFromDirectory(DirectoryPath, IncludeSubDirectories) 
+	TRACE DeleteAllQvdFilesFromDirectory(DirectoryPath:[$(DirectoryPath)]) 
+		IncludeSubDirectories:[$(IncludeSubDirectories)] ; 
+		 
+	LET _IncludeSubDirectories = $(Gqvc.Macro.v.DefaultIfEmpty('$(IncludeSubDirectories)',0)); //if(len('$(IncludeSubDirectories)')>0,1,0); 
+
+
+	CALL Gqvc.ResolvePath('$(DirectoryPath)'); 
+
+
+	IF FileTime('$(v.ResolvedDirectoryPath)\*.*') > 0 THEN 
+
+
+		 IF(_IncludeSubDirectories) THEN 
+			TRACE Deleting ALL QVDs from Directory $(DirectoryPath) and ALL sub directories; 
+			EXECUTE cmd /C DEL /S "$(v.ResolvedDirectoryPath)\*.qvd"; 
+		 ELSE 
+			  TRACE Deleting ALL QVDs from Directory $(DirectoryPath); 
+			  EXECUTE cmd /C DEL "$(v.ResolvedDirectoryPath)\*.qvd"; 
+		 END IF 
+	ELSE 
+			TRACE Directory does not exist $(DirectoryPath); 
+	END IF 
+
+
+	SET _IncludeSubDirectories=; // Reset 
+END SUB 
+// ****************************** End Sub ****************************** 
+
+
+
+
+// ****************************** Start Sub ****************************** 
+// Reduces data from a QVD file to number of record passed as argument.  
+// Parameters: 
+// @param 1 String. QvdName: Name of the QVD. No ".qvd" extension required in the name. 
+// @param 2 String. QvdPath: Path of the QVD file.  
+// @param 3 Number, Optional. Number of records to retain in the QVD after reduce. If no value is entered, all data will be removed. Values between 0 and 1 will retain sample records. 
+// @syntax CALL Gqvc.ReduceDataQvd('QvdName', 'QvdPath',RecordsToRetain); 
+// @E.g., CALL Gqvc.ReduceDataQvd('Sales Data', '..\Data\Sales',100000); 
+SUB Gqvc.ReduceDataQvd(QvdName, QvdPath, RecordsToRetain) 
+
+
+	CALL Gqvc.ResolvePath('$(QvdPath)'); 
+	LET Gqvc.Qvd.v.QvdFileName = '$(v.ResolvedDirectoryPath)\$(QvdName).qvd' ; 
+	LET Gqvc.Qvd.v.RecordsToRetain = IF(LEN(TRIM('$(RecordsToRetain)'))	= 0, 0, IF(ISNUM('$(RecordsToRetain)')=-1,$(RecordsToRetain),-1)); 
+	TRACE Gqvc.ReduceDataQvd(QvdName:[$(QvdName)], QvdPath:[$(v.ResolvedDirectoryPath)], RecordsToRetain: [$(RecordsToRetain)]); 
+
+
+	IF FileTime('$(Gqvc.Qvd.v.QvdFileName)') > 0 THEN 
+		LET Gqvc.Qvd.v.QvdNoOfRecords.Original = QvdNoOfRecords('$(Gqvc.Qvd.v.QvdFileName)'); 
+		LET Gqvc.Qvd.v.TempTableName = $(Gqvc.Macro.v.CreateRandomName('__Gqvc.ReduceDataQvd')); //'__Dummy_$@#'; 
+
+
+		IF $(Gqvc.Qvd.v.RecordsToRetain) > $(Gqvc.Qvd.v.QvdNoOfRecords.Original) THEN 
+			TRACE QvdName:[$(QvdName)] already has fewer records [$(Gqvc.Qvd.v.QvdNoOfRecords.Original)] than given limit [$(RecordsToRetain)]. No reduction of data will happen; 
+		 
+		ELSEIF $(Gqvc.Qvd.v.RecordsToRetain) > 0 AND $(Gqvc.Qvd.v.RecordsToRetain) < 1 THEN 
+			[$(Gqvc.Qvd.v.TempTableName)]: 
+			NOCONCATENATE 
+			SAMPLE $(Gqvc.Qvd.v.RecordsToRetain) 
+			LOAD * FROM [$(Gqvc.Qvd.v.QvdFileName)] (qvd) 
+			WHERE 1=1; 
+	 
+			CALL Gqvc.StoreDropDataQvd('$(Gqvc.Qvd.v.TempTableName)', '$(v.ResolvedDirectoryPath)', '$(QvdName)'); 
+			TRACE QvdName:[$(v.ResolvedDirectoryPath)\$(QvdName)] reduced from [$(Gqvc.Qvd.v.QvdNoOfRecords.Original)] and a sample of [$(RecordsToRetain)] records are retained; 
+		 
+		ELSEIF $(Gqvc.Qvd.v.RecordsToRetain) > 0 THEN 
+			[$(Gqvc.Qvd.v.TempTableName)]: 
+			NOCONCATENATE 
+			FIRST $(Gqvc.Qvd.v.RecordsToRetain) 
+			LOAD * FROM [$(Gqvc.Qvd.v.QvdFileName)] (qvd); 
+	 
+			CALL Gqvc.StoreDropDataQvd('$(Gqvc.Qvd.v.TempTableName)', '$(v.ResolvedDirectoryPath)', '$(QvdName)'); 
+			TRACE QvdName:[$(v.ResolvedDirectoryPath)\$(QvdName)] reduced from [$(Gqvc.Qvd.v.QvdNoOfRecords.Original)] to [$(RecordsToRetain)] records; 
+		 
+		ELSEIF $(Gqvc.Qvd.v.RecordsToRetain) = 0 THEN 
+			[$(Gqvc.Qvd.v.TempTableName)]: 
+			NOCONCATENATE 
+			FIRST 1 
+			LOAD * FROM [$(Gqvc.Qvd.v.QvdFileName)] (qvd); 
+				INNER JOIN ($(Gqvc.Qvd.v.TempTableName)) 
+			LOAD * RESIDENT [$(Gqvc.Qvd.v.TempTableName)] WHERE 1=2; 
+			 
+			CALL Gqvc.StoreDropDataQvd('$(Gqvc.Qvd.v.TempTableName)', '$(v.ResolvedDirectoryPath)', '$(QvdName)'); 
+			TRACE QvdName:[$(v.ResolvedDirectoryPath)\$(QvdName)] fully truncated from [$(Gqvc.Qvd.v.QvdNoOfRecords.Original)] records;			 
+		 
+		ELSE 
+			TRACE 'Invalid argument value for RecordsToRetain. Only positive integers are allowed'; 
+			CALL Gqvc.LogEvent('Invalid argument value for RecordsToRetain. Only positive integers are allowed','E'); 
+		END IF 
+
+
+	ELSE 
+	    TRACE Qvd:[$(QvdName)], does not exist at QvdPath:[$(v.ResolvedDirectoryPath)]. QVD cannot be reduced.;	 
+		CALL Gqvc.LogEvent('Qvd:[$(QvdName)], does not exist at QvdPath:[$(v.ResolvedDirectoryPath)]. QVD cannot be reduced.','E');	 
+	END IF 
+
+
+	// Cleanup.. 
+	LET Gqvc.Qvd.v.RecordsToRetain =;  
+	LET Gqvc.Qvd.v.QvdFileName = ; 
+	LET Gqvc.Qvd.v.QvdNoOfRecords.Original = ; 
+	LET Gqvc.Qvd.v.TempTableName = ; 
+	 
+END SUB 
+// ****************************** End Sub ****************************** 
+///$tab Directory Management 
+// Directory Management - Functions for managing file system 
+
+
+// ****************************** Start Sub ****************************** 
+/* 
+Creates a directory on the file system if it does not already exist. 
+
+
+@param 1 String. DirectoryPath: The path of the directory. 
+@syntax CALL Gqvc.CreateDirectory('DirectoryPath'); 
+*/ 
+
+
+SUB Gqvc.CreateDirectory(DirectoryPath) 
+	SET v.NonExistingDirAllowed = -1;
+	CALL Gqvc.ResolvePath('$(DirectoryPath)'); 
+	TRACE Gqvc.CreateDirectory(DirectoryPath:[$(v.ResolvedDirectoryPath)]); 
+	 
+	IF FileTime('$(v.ResolvedDirectoryPath)\*.*') > 0 THEN 
+		TRACE Directory Exists $(v.ResolvedDirectoryPath); 
+	ELSE 
+	    TRACE Creating Directory $(v.ResolvedDirectoryPath); 
+	    EXECUTE cmd /C mkdir "$(v.ResolvedDirectoryPath)";  
+
+
+		IF IsNull(FileTime('$(v.ResolvedDirectoryPath)\*.*'))  THEN 
+			TRACE Error creating directory: $(v.ResolvedDirectoryPath); 
+			CALL Gqvc.LogEvent('Error creating directory: $(v.ResolvedDirectoryPath)','E'); 
+			CALL Gqvc.RaiseFatalError; 
+	    END IF     
 	END IF
-
-	SET _IncludeSubDirectories=; // Reset
-END SUB
-// ****************************** End Sub ******************************
-
-
-// ****************************** Start Sub ******************************
-// Reduces data from a QVD file to number of record passed as argument. 
-// Parameters:
-// @param 1 String. QvdName: Name of the QVD. No ".qvd" extension required in the name.
-// @param 2 String. QvdPath: Path of the QVD file. 
-// @param 3 Number, Optional. Number of records to retain in the QVD after reduce. If no value is entered, all data will be removed. Values between 0 and 1 will retain sample records.
-// @syntax CALL Gqvc.ReduceDataQvd('QvdName', 'QvdPath',RecordsToRetain);
-// @E.g., CALL Gqvc.ReduceDataQvd('Sales Data', '..\Data\Sales',100000);
-SUB Gqvc.ReduceDataQvd(QvdName, QvdPath, RecordsToRetain)
-
-	CALL Gqvc.ResolvePath('$(QvdPath)');
-	LET Gqvc.Qvd.v.QvdFileName = '$(v.ResolvedDirectoryPath)\$(QvdName).qvd' ;
-	LET Gqvc.Qvd.v.RecordsToRetain = IF(LEN(TRIM('$(RecordsToRetain)'))	= 0, 0, IF(ISNUM('$(RecordsToRetain)')=-1,$(RecordsToRetain),-1));
-	TRACE Gqvc.ReduceDataQvd(QvdName:[$(QvdName)], QvdPath:[$(v.ResolvedDirectoryPath)], RecordsToRetain: [$(RecordsToRetain)]);
-
-	IF FileTime('$(Gqvc.Qvd.v.QvdFileName)') > 0 THEN
-		LET Gqvc.Qvd.v.QvdNoOfRecords.Original = QvdNoOfRecords('$(Gqvc.Qvd.v.QvdFileName)');
-		LET Gqvc.Qvd.v.TempTableName = $(Gqvc.Macro.v.CreateRandomName('__Gqvc.ReduceDataQvd')); //'__Dummy_$@#';
-
-		IF $(Gqvc.Qvd.v.RecordsToRetain) > $(Gqvc.Qvd.v.QvdNoOfRecords.Original) THEN
-			TRACE QvdName:[$(QvdName)] already has fewer records [$(Gqvc.Qvd.v.QvdNoOfRecords.Original)] than given limit [$(RecordsToRetain)]. No reduction of data will happen;
-		
-		ELSEIF $(Gqvc.Qvd.v.RecordsToRetain) > 0 AND $(Gqvc.Qvd.v.RecordsToRetain) < 1 THEN
-			[$(Gqvc.Qvd.v.TempTableName)]:
-			NOCONCATENATE
-			SAMPLE $(Gqvc.Qvd.v.RecordsToRetain)
-			LOAD * FROM [$(Gqvc.Qvd.v.QvdFileName)] (qvd)
-			WHERE 1=1;
 	
-			CALL Gqvc.StoreDropDataQvd('$(Gqvc.Qvd.v.TempTableName)', '$(v.ResolvedDirectoryPath)', '$(QvdName)');
-			TRACE QvdName:[$(v.ResolvedDirectoryPath)\$(QvdName)] reduced from [$(Gqvc.Qvd.v.QvdNoOfRecords.Original)] and a sample of [$(RecordsToRetain)] records are retained;
-		
-		ELSEIF $(Gqvc.Qvd.v.RecordsToRetain) > 0 THEN
-			[$(Gqvc.Qvd.v.TempTableName)]:
-			NOCONCATENATE
-			FIRST $(Gqvc.Qvd.v.RecordsToRetain)
-			LOAD * FROM [$(Gqvc.Qvd.v.QvdFileName)] (qvd);
-	
-			CALL Gqvc.StoreDropDataQvd('$(Gqvc.Qvd.v.TempTableName)', '$(v.ResolvedDirectoryPath)', '$(QvdName)');
-			TRACE QvdName:[$(v.ResolvedDirectoryPath)\$(QvdName)] reduced from [$(Gqvc.Qvd.v.QvdNoOfRecords.Original)] to [$(RecordsToRetain)] records;
-		
-		ELSEIF $(Gqvc.Qvd.v.RecordsToRetain) = 0 THEN
-			[$(Gqvc.Qvd.v.TempTableName)]:
-			NOCONCATENATE
-			FIRST 1
-			LOAD * FROM [$(Gqvc.Qvd.v.QvdFileName)] (qvd);
-				INNER JOIN ($(Gqvc.Qvd.v.TempTableName))
-			LOAD * RESIDENT [$(Gqvc.Qvd.v.TempTableName)] WHERE 1=2;
-			
-			CALL Gqvc.StoreDropDataQvd('$(Gqvc.Qvd.v.TempTableName)', '$(v.ResolvedDirectoryPath)', '$(QvdName)');
-			TRACE QvdName:[$(v.ResolvedDirectoryPath)\$(QvdName)] fully truncated from [$(Gqvc.Qvd.v.QvdNoOfRecords.Original)] records;			
-		
-		ELSE
-			TRACE 'Invalid argument value for RecordsToRetain. Only positive integers are allowed';
-			CALL Gqvc.LogEvent('Invalid argument value for RecordsToRetain. Only positive integers are allowed','E');
-		END IF
-
-	ELSE
-	    TRACE Qvd:[$(QvdName)], does not exist at QvdPath:[$(v.ResolvedDirectoryPath)]. QVD cannot be reduced.;	
-		CALL Gqvc.LogEvent('Qvd:[$(QvdName)], does not exist at QvdPath:[$(v.ResolvedDirectoryPath)]. QVD cannot be reduced.','E');	
-	END IF
-
-	// Cleanup..
-	LET Gqvc.Qvd.v.RecordsToRetain =; 
-	LET Gqvc.Qvd.v.QvdFileName = ;
-	LET Gqvc.Qvd.v.QvdNoOfRecords.Original = ;
-	LET Gqvc.Qvd.v.TempTableName = ;
-	
-END SUB
-// ****************************** End Sub ******************************
-///$tab Directory Management
-// Directory Management - Functions for managing file system
-
-// ****************************** Start Sub ******************************
-/*
-Creates a directory on the file system if it does not already exist.
-
-@param 1 String. DirectoryPath: The path of the directory.
-@syntax CALL Gqvc.CreateDirectory('DirectoryPath');
-*/
-
-SUB Gqvc.CreateDirectory(DirectoryPath)
-	CALL Gqvc.ResolvePath('$(DirectoryPath)');
-	TRACE Gqvc.CreateDirectory(DirectoryPath:[$(v.ResolvedDirectoryPath)]);
-	
-	IF FileTime('$(v.ResolvedDirectoryPath)\*.*') > 0 THEN
-		TRACE Directory Exists $(v.ResolvedDirectoryPath);
-	ELSE
-	    TRACE Creating Directory $(v.ResolvedDirectoryPath);
-	    EXECUTE cmd /C mkdir "$(v.ResolvedDirectoryPath)"; 
-
-		IF IsNull(FileTime('$(v.ResolvedDirectoryPath)\*.*'))  THEN
-			TRACE Error creating directory: $(v.ResolvedDirectoryPath);
-			CALL Gqvc.LogEvent('Error creating directory: $(v.ResolvedDirectoryPath)','E');
-			CALL Gqvc.RaiseFatalError;
-	    END IF    
-	END IF
-END SUB
-// ****************************** End Sub ******************************
-
-// ****************************** Start Sub ******************************
-/*
-Deletes a directory on the file system if it exist. -- CAUTION! USE WITH CARE
-
-@param 1 String. DirectoryPath: The path of the directory.
-@syntax CALL Gqvc.DeleteDirectory('DirectoryPath');
-*/
-
-SUB Gqvc.DeleteDirectory(DirectoryPath)
-	CALL Gqvc.ResolvePath('$(DirectoryPath)');
-
-	TRACE Gqvc.DeleteDirectory(DirectoryPath:[$(v.ResolvedDirectoryPath)]);
-
-	IF FileTime('$(v.ResolvedDirectoryPath)\*.*') > 0 THEN
-	        TRACE Deleting directory $(v.ResolvedDirectoryPath);
-	        EXECUTE cmd /C rmdir "$(v.ResolvedDirectoryPath)";
-	        
-		IF FileTime('$(v.ResolvedDirectoryPath)\*.*') > 0 THEN
-			TRACE Error deleting directory: $(v.ResolvedDirectoryPath);
-			CALL Gqvc.LogEvent('Error deleting directory: $(v.ResolvedDirectoryPath)','E');
-			CALL Gqvc.RaiseFatalError;
-	    END IF    
-	ELSE
-	        TRACE Directory does not exist. Cannot delete $(v.ResolvedDirectoryPath);
-	        
-	END IF
-END SUB
-// ****************************** End Sub ******************************
+	SET v.NonExistingDirAllowed =; // Reset
+END SUB 
+// ****************************** End Sub ****************************** 
 
 
-// ****************************** Start Sub ******************************
-/*
-Resolves relative path in absolute path
+// ****************************** Start Sub ****************************** 
+/* 
+Resolves relative path in absolute path 
 
-@param 1 String. DirectoryPath: The path of the directory.
-@syntax CALL Gqvc.ResolvePath('DirectoryPath');
-*/
-SUB Gqvc.ResolvePath(ResolveDirectoryPath)
-	LET v.Path = Replace(DocumentPath(),'\'&DocumentName(),'');
 
-	// Remove any trailing '\' from the resolved directory path
-	IF	WildMatch('|'&'$(ResolveDirectoryPath)'&'|','|.\|', '|..\|', '|.\*\|', '|..\*\|', '|\\*\|','|*\|') >= 3 THEN
-		LET ResolveDirectoryPath = Left('$(ResolveDirectoryPath)',Len('$(ResolveDirectoryPath)')-1);
-	END IF			
+@param 1 String. DirectoryPath: The path of the directory. 
+@syntax CALL Gqvc.ResolvePath('DirectoryPath'); 
+*/ 
+SUB Gqvc.ResolvePath(ResolveDirectoryPath) 
+	LET v.Path = Replace(DocumentPath(),'\'&DocumentName(),''); 
 
-	IF FileTime('$(ResolveDirectoryPath)') > 0 THEN
+
+	// Remove any trailing '\' from the resolved directory path 
+	IF	WildMatch('|'&'$(ResolveDirectoryPath)'&'|','|.\|', '|..\|', '|.\*\|', '|..\*\|', '|\\*\|','|*\|') >= 3 THEN 
+		LET ResolveDirectoryPath = Left('$(ResolveDirectoryPath)',Len('$(ResolveDirectoryPath)')-1); 
+	END IF			 
+
+
+	IF FileTime('$(ResolveDirectoryPath)') > 0 THEN 
+		LET v.ResolvedDirectoryPath = '$(ResolveDirectoryPath)'; 
+	 
+	ELSEIF SubStringCount('$(ResolveDirectoryPath)','.\') > 0 THEN // for relaive path 
+		IF SubStringCount('\' & '$(ResolveDirectoryPath)' & '\','\.\\') > 0 THEN 
+			LET v.ResolvedDirectoryPath = '$(v.Path)'; 
+		ELSEIF 	SubStringCount('\' & '$(ResolveDirectoryPath)' & '\','\.\') > 0 THEN 
+			LET v.ResolvedDirectoryPath = '$(v.Path)' & '\' & Replace('$(ResolveDirectoryPath)','.\',''); 
+		ELSE 
+			LET v.NodeCount = SubStringCount('$(ResolveDirectoryPath)','..\'); 
+			LET v.FixedPath = Mid('$(ResolveDirectoryPath)',Index('$(ResolveDirectoryPath)','..\',$(v.NodeCount))+3); 
+			LET v.ResolvedRelativePath = Left('$(v.Path)',Index('$(v.Path)','\',$(v.NodeCount)*-1)-1); 
+			LET v.ResolvedDirectoryPath = '$(v.ResolvedRelativePath)' & If(Len('$(v.FixedPath)')>0,'\'&'$(v.FixedPath)',Null());		 
+		END IF	 
+
+
+	ELSEIF	Left('$(ResolveDirectoryPath)',2) = '\\' THEN // for UNC path 
+		IF Right('$(ResolveDirectoryPath)',1) = '\' THEN 
+			LET v.ResolvedDirectoryPath = LEFT('$(ResolveDirectoryPath)',LEN('$(ResolveDirectoryPath)')-1); 
+		ELSE 
+			LET v.ResolvedDirectoryPath = '$(ResolveDirectoryPath)'; 
+		END IF 
+		 
+	ELSEIF v.NonExistingDirAllowed=-1 THEN
 		LET v.ResolvedDirectoryPath = '$(ResolveDirectoryPath)';
-	
-	ELSEIF SubStringCount('$(ResolveDirectoryPath)','.\') > 0 THEN // for relaive path
-		IF SubStringCount('\' & '$(ResolveDirectoryPath)' & '\','\.\\') > 0 THEN
-			LET v.ResolvedDirectoryPath = '$(v.Path)';
-		ELSEIF 	SubStringCount('\' & '$(ResolveDirectoryPath)' & '\','\.\') > 0 THEN
-			LET v.ResolvedDirectoryPath = '$(v.Path)' & '\' & Replace('$(ResolveDirectoryPath)','.\','');
-		ELSE
-			LET v.NodeCount = SubStringCount('$(ResolveDirectoryPath)','..\');
-			LET v.FixedPath = Mid('$(ResolveDirectoryPath)',Index('$(ResolveDirectoryPath)','..\',$(v.NodeCount))+3);
-			LET v.ResolvedRelativePath = Left('$(v.Path)',Index('$(v.Path)','\',$(v.NodeCount)*-1)-1);
-			LET v.ResolvedDirectoryPath = '$(v.ResolvedRelativePath)' & If(Len('$(v.FixedPath)')>0,'\'&'$(v.FixedPath)',Null());		
-		END IF	
-
-	ELSEIF	Left('$(ResolveDirectoryPath)',2) = '\\' THEN // for UNC path
-		IF Right('$(ResolveDirectoryPath)',1) = '\' THEN
-			LET v.ResolvedDirectoryPath = LEFT('$(ResolveDirectoryPath)',LEN('$(ResolveDirectoryPath)')-1);
-		ELSE
-			LET v.ResolvedDirectoryPath = '$(ResolveDirectoryPath)';
-		END IF
+		CALL Gqvc.LogEvent('Permitted by not existing directory override: $(ResolveDirectoryPath)','I');
 		
-	ELSE
-		TRACE Cannot resolve document path: '$(ResolveDirectoryPath)';
-		CALL Gqvc.LogEvent('Cannot resolve document path: $(ResolveDirectoryPath)','E'); 
-		CALL Gqvc.RaiseFatalError;	
-	END IF
-
-	// Cleanup..
-	SET v.Path = ;
-END SUB
-// ****************************** End Sub ******************************
+	ELSE 
+		TRACE Cannot resolve document path: '$(ResolveDirectoryPath)'; 
+		CALL Gqvc.LogEvent('Cannot resolve document path: $(ResolveDirectoryPath)','E');  
+		CALL Gqvc.RaiseFatalError;	 
+	END IF 
 
 
-// ****************************** Start Sub ******************************
-/*
-Recursive through directory path - WORK IN PROGRESS, DO NOT USE!!
+	// Cleanup.. 
+	SET v.Path = ; 
+END SUB 
+// ****************************** End Sub ****************************** 
 
-@param 1 String. DirectoryPath: The path of the directory.
-@param 2 String. Loop back procedure which needs to be called with each execution in FOR loop
-@syntax CALL Gqvc.RecursiveDirectory('DirectoryPath');
-*/
-SUB Gqvc.RecursiveDirectory(DirectoryPath,LoopBack)
-	LET v.Mask = IF(RIGHT('$(DirectoryPath)',1) = '\','*','\*');
-	
-	FOR Each Dir in dirlist (DirectoryPath & '$(v.Mask)' )
-		CALL Gqvc.RecursiveDirectory(Dir)
-	NEXT Dir
-END SUB
-// ****************************** End Sub ******************************
-///$tab Error Management
-// Error Management - Functions for errors
 
-// ****************************** Start Sub ******************************
-/*
-Create fatal error to stop execution of script
 
-@syntax CALL Gqvc.RaiseFatalError;
-*/
 
-SUB Gqvc.RaiseFatalError
-	TRACE Fatal error raised!!;
-	CALL Gqvc.LogEvent('Fatal error raised! Script execution will stop','E');
-	CALL Gqvc.Cleanup;
-	CALL FatalError; // Dummy sub to create script error
-	EXIT Script;
-END SUB
-// ****************************** End Sub ******************************
-///$tab Log Management
-// Log Management - Functions for creating and maintaining document specific logs
+// ****************************** Start Sub ****************************** 
+/* 
+Recursive through directory path - WORK IN PROGRESS, DO NOT USE!! 
 
-// ****************************** Start Sub ******************************
-/*
-Creates a log file and writes event instantly. If a log file does not exists, it creates one, otherwise it appends to the log file.
 
-@param 1 String. Log message
-@param 2 String, Optional. Log level. Acceptable values 'E', 'I' and 'W' (case insensitive) for Error, Information and Warning respectively. Default is Information.
-@syntax CALL Gqvc.LogEvent('LogMessage',['LogLevel']);
-*/
-SET Gqvc.Log.v.NewRun = ; // Resets for each run
-SUB Gqvc.LogEvent(LogMessage,LogLevel)
+@param 1 String. DirectoryPath: The path of the directory. 
+@param 2 String. Loop back procedure which needs to be called with each execution in FOR loop 
+@syntax CALL Gqvc.RecursiveDirectory('DirectoryPath'); 
+*/ 
+SUB Gqvc.RecursiveDirectory(DirectoryPath,LoopBack) 
+	LET v.Mask = IF(RIGHT('$(DirectoryPath)',1) = '\','*','\*'); 
+	 
+	FOR Each Dir in dirlist (DirectoryPath & '$(v.Mask)' ) 
+		CALL Gqvc.RecursiveDirectory(Dir) 
+	NEXT Dir 
+END SUB 
+// ****************************** End Sub ****************************** 
+///$tab Error Management 
+// Error Management - Functions for errors 
 
-	IF LEN(LogLevel) > 0 THEN
-		LET Gqvc.Log.v.LogLevel = IF(UPPER(LEFT(LogLevel,1)) = 'W','Warning',IF(UPPER(LEFT(LogLevel,1)) = 'E','Error','Information'));
-	ELSE
-		LET Gqvc.Log.v.LogLevel = 'Information';	
-	END IF
-	
-	LET Gqvc.Log.v.LogFileName = REPLACE(DOCUMENTNAME(),SUBFIELD(DOCUMENTNAME(),'.',-1),'log');
-	LET Gqvc.Log.v.LogExists = IF(FILETIME(REPLACE(DOCUMENTPATH(),DOCUMENTNAME(),'')&'$(Gqvc.Log.v.LogFileName)') > 0,-1,0);
-		
-	LET Gqvc.Log.v.SingleRedirection = CHR(62);
-	LET Gqvc.Log.v.DoubleRedirection = CHR(62)&CHR(62);
-	LET Gqvc.Log.v.Delimiter = CHR(9); // 9 = Horizontal tab
-	
-	LET Gqvc.Log.v.LogMessage = TIMESTAMP(NOW()) & '$(Gqvc.Log.v.Delimiter)' & '$(Gqvc.Log.v.LogLevel)' & '$(Gqvc.Log.v.Delimiter)' & OSUser() & '$(Gqvc.Log.v.Delimiter)' & '$(LogMessage)';
-	LET Gqvc.Log.v.NewLoadText = TIMESTAMP(NOW()) & '$(Gqvc.Log.v.Delimiter)' & 'Information' & '$(Gqvc.Log.v.Delimiter)' & OSUser() & '$(Gqvc.Log.v.Delimiter)' & '===== New Load =====';
 
-	TRACE Gqvc.LogEvent(LogMessage:[$(LogMessage)], LogLevel:[$(Gqvc.Log.v.LogLevel)]);
-	IF Gqvc.Log.v.LogExists = -1 THEN
-		IF Len('$(Gqvc.Log.v.NewRun)')=0 THEN 	// check if this is a new run. 
-			EXECUTE CMD /C ECHO $(Gqvc.Log.v.NewLoadText) $(Gqvc.Log.v.DoubleRedirection) $(Gqvc.Log.v.LogFileName);					
-			SET Gqvc.Log.v.NewRun = 0;
-		END IF
-		EXECUTE CMD /C ECHO $(Gqvc.Log.v.LogMessage) $(Gqvc.Log.v.DoubleRedirection) $(Gqvc.Log.v.LogFileName);		
-	ELSE
-			EXECUTE CMD /C ECHO $(Gqvc.Log.v.NewLoadText) $(Gqvc.Log.v.SingleRedirection) $(Gqvc.Log.v.LogFileName);					
-			SET Gqvc.Log.v.NewRun = 0;
-			EXECUTE CMD /C ECHO $(Gqvc.Log.v.LogMessage) $(Gqvc.Log.v.DoubleRedirection) $(Gqvc.Log.v.LogFileName);
-	END IF
+// ****************************** Start Sub ****************************** 
+/* 
+Create fatal error to stop execution of script 
 
-	// Cleanup..
-	SET	Gqvc.Log.v.LogExists = ;
-	SET Gqvc.Log.v.LogFileName = ;
-	SET Gqvc.Log.v.SingleRedirection = ;
-	SET Gqvc.Log.v.DoubleRedirection = ;
-	SET Gqvc.Log.v.LogMessage = ;
-	SET Gqvc.Log.v.LogLevel = ;
-	SET Gqvc.Log.v.NewLoadText = ; 
-	SET Gqvc.Log.v.Delimiter = ;
-END SUB
-// ****************************** End Sub ******************************
-///$tab Calendar Management
-// Calendar Management - Functions for creating and maintaining generic calendars
 
-// ****************************** Start Sub ******************************
-/*
-Builds a generic calendar based on an existing date field, in the data model.
+@syntax CALL Gqvc.RaiseFatalError; 
+*/ 
 
-@param 1 String. Existing date field Name
-@param 2 String. New calendar table name
-@param 3 String, Optional. Calendar field name prefix
 
-@syntax CALL Gqvc.CreateCalendarFromField('FieldName', 'NewTableName',['FieldPrefix']);
-*/
-SUB Gqvc.CreateCalendarFromField(FieldName,TableName,FieldPrefix)
+SUB Gqvc.RaiseFatalError 
+	TRACE Fatal error raised!!; 
+	CALL Gqvc.LogEvent('Fatal error raised! Script execution will stop','E'); 
+	CALL Gqvc.Cleanup; 
+	CALL FatalError; // Dummy sub to create script error 
+	EXIT Script; 
+END SUB 
+// ****************************** End Sub ****************************** 
+///$tab Log Management 
+// Log Management - Functions for creating and maintaining document specific logs 
 
-	IF $(Gqvc.Macro.v.FieldExists('$(FieldName)')) = -1 THEN
-	    TRACE Date Field: [$(FieldName)], does not exist. Calendar table cannot be created;		
-	ELSE
-		[$(TableName)]:	 
-		LOAD
-			[_Date]					AS [$(FieldName)],		// Link on Field Name
-			[_Date]					AS [%$(FieldName)],		// Link on %field name
-			YEAR(_Date)				AS [$(FieldPrefix)Year],
-			MONTH(_Date)			AS [$(FieldPrefix)Month],
-			DAY(_Date)				AS [$(FieldPrefix)Day],	
-			WEEK(_Date)				AS [$(FieldPrefix)Week],
-			WEEKDAY(_Date)			AS [$(FieldPrefix)Day Name],	
-			MONTHNAME(_Date)		AS [$(FieldPrefix)Month Year],
-			QUARTERNAME(_Date)		AS [$(FieldPrefix)Quarter Name],
-			'Q' & CEIL(MONTH(_Date)/3)		AS [$(FieldPrefix)Quarter]
-		;			
-		LOAD
-			DATE(_MinDate + IterNo()) AS _Date
-		WHILE
-			_MinDate + IterNo() <= _MaxDate
-		;		
-		LOAD
-			MIN(_DateField)-1 AS _MinDate,
-			MAX(_DateField) AS _MaxDate
-		;		
-		LOAD
-			FieldValue('$(FieldName)',RecNo()) AS _DateField
-		AUTOGENERATE
-			FieldValueCount('$(FieldName)');	
-	END IF
-END SUB
-// ****************************** End Sub ******************************
 
-// ****************************** Start Sub ******************************
-/*
-Builds a generic calendar based on a start and end date values.
+// ****************************** Start Sub ****************************** 
+/* 
+Creates a log file and writes event instantly. If a log file does not exists, it creates one, otherwise it appends to the log file. 
 
-@param 1 String. New calendar table name
-@param 2 Number. Calendar start date in numeric format
-@param 3 Number. Calendar end date in numeric format
-@param 4 String, Optional. Calendar field name prefix
 
-@syntax CALL Gqvc.CreateCalendar('NewTableName','','',['FieldPrefix']);
-*/
+@param 1 String. Log message 
+@param 2 String, Optional. Log level. Acceptable values 'E', 'I' and 'W' (case insensitive) for Error, Information and Warning respectively. Default is Information. 
+@syntax CALL Gqvc.LogEvent('LogMessage',['LogLevel']); 
+*/ 
+SET Gqvc.Log.v.NewRun = ; // Resets for each run 
+SUB Gqvc.LogEvent(LogMessage,LogLevel) 
 
-SUB Gqvc.CreateCalendar(TableName,StartDate,EndDate,FieldPrefix)
-	IF $(Gqvc.Macro.v.TableExists('$(TableName)')) <> -1 THEN
-	    TRACE Table: [$(TableName)], already exist. Calendar table cannot be created;		
-	ELSEIF $(StartDate) > $(EndDate) THEN
-		TRACE Start date should be less than or equal to End date. Calendar Table: [$(TableName)], will not be created;	
-	ELSE	
-		[$(TableName)]:	 
-		LOAD
-			[_Date]					AS [$(FieldPrefix)Date],		// Link on Field Name
-			NUM([_Date])			AS [%$(FieldPrefix)Date],		// Link on %field name
-			YEAR(_Date)				AS [$(FieldPrefix)Year],
-			MONTH(_Date)			AS [$(FieldPrefix)Month],
-			DAY(_Date)				AS [$(FieldPrefix)Day],	
-			WEEK(_Date)				AS [$(FieldPrefix)Week],
-			WEEKDAY(_Date)			AS [$(FieldPrefix)Day Name],	
-			MONTHNAME(_Date)		AS [$(FieldPrefix)Month Year],
-			QUARTERNAME(_Date)		AS [$(FieldPrefix)Quarter Name],
-			'Q' & CEIL(MONTH(_Date)/3)		AS [$(FieldPrefix)Quarter]
-		;	 
-		LOAD
-			DATE(_MinDate + IterNo()) AS _Date
-		WHILE
-			_MinDate + IterNo() <= _MaxDate
-		;		
-		LOAD
-			$(StartDate)-1 AS _MinDate,
-			$(EndDate) AS _MaxDate
-		AUTOGENERATE (1);	
-		;
-	END IF
-END SUB
-// ****************************** End Sub ******************************
-///$tab DB Management
-// ****************************** Start Sub ******************************
-/*
-Retrieves the current timestamp from the DB.  
-@syntax CALL Gqvc.GetTimestampFromSqlDB;
+
+	IF LEN(LogLevel) > 0 THEN 
+		LET Gqvc.Log.v.LogLevel = IF(UPPER(LEFT(LogLevel,1)) = 'W','Warning',IF(UPPER(LEFT(LogLevel,1)) = 'E','Error','Information')); 
+	ELSE 
+		LET Gqvc.Log.v.LogLevel = 'Information';	 
+	END IF 
+	 
+	LET Gqvc.Log.v.LogFileName = TEXT(REPLACE(DOCUMENTNAME(),SUBFIELD(DOCUMENTNAME(),'.',-1),'log'));  //TEXT(DOCUMENTNAME() & '.log'); 
+	LET Gqvc.Log.v.LogExists = IF(FILETIME(REPLACE(DOCUMENTPATH(),DOCUMENTNAME(),'')&'$(Gqvc.Log.v.LogFileName)') > 0,-1,0); 
+		 
+	LET Gqvc.Log.v.SingleRedirection = CHR(62); 
+	LET Gqvc.Log.v.DoubleRedirection = CHR(62)&CHR(62); 
+	LET Gqvc.Log.v.Delimiter = CHR(9); // 9 = Horizontal tab 
+	 
+	LET Gqvc.Log.v.LogMessage = TIMESTAMP(NOW()) & '$(Gqvc.Log.v.Delimiter)' & '$(Gqvc.Log.v.LogLevel)' & '$(Gqvc.Log.v.Delimiter)' & OSUser() & '$(Gqvc.Log.v.Delimiter)' & '$(LogMessage)'; 
+	LET Gqvc.Log.v.NewLoadText = TIMESTAMP(NOW()) & '$(Gqvc.Log.v.Delimiter)' & 'Information' & '$(Gqvc.Log.v.Delimiter)' & OSUser() & '$(Gqvc.Log.v.Delimiter)' & '===== New Load ====='; 
+
+
+	TRACE Gqvc.LogEvent(LogMessage:[$(LogMessage)], LogLevel:[$(Gqvc.Log.v.LogLevel)]); 
+	IF Gqvc.Log.v.LogExists = -1 THEN 
+		IF Len('$(Gqvc.Log.v.NewRun)')=0 THEN 	// check if this is a new run.  
+			EXECUTE CMD /C ECHO $(Gqvc.Log.v.NewLoadText) $(Gqvc.Log.v.DoubleRedirection) "$(Gqvc.Log.v.LogFileName)";					 
+			SET Gqvc.Log.v.NewRun = 0; 
+		END IF 
+		EXECUTE CMD /C ECHO $(Gqvc.Log.v.LogMessage) $(Gqvc.Log.v.DoubleRedirection) "$(Gqvc.Log.v.LogFileName)";		 
+	ELSE 
+			EXECUTE CMD /C ECHO $(Gqvc.Log.v.NewLoadText) $(Gqvc.Log.v.SingleRedirection) "$(Gqvc.Log.v.LogFileName)";					 
+			SET Gqvc.Log.v.NewRun = 0; 
+			EXECUTE CMD /C ECHO $(Gqvc.Log.v.LogMessage) $(Gqvc.Log.v.DoubleRedirection) "$(Gqvc.Log.v.LogFileName)"; 
+	END IF 
+
+
+	// Cleanup.. 
+	SET	Gqvc.Log.v.LogExists = ; 
+	SET Gqvc.Log.v.LogFileName = ; 
+	SET Gqvc.Log.v.SingleRedirection = ; 
+	SET Gqvc.Log.v.DoubleRedirection = ; 
+	SET Gqvc.Log.v.LogMessage = ; 
+	SET Gqvc.Log.v.LogLevel = ; 
+	SET Gqvc.Log.v.NewLoadText = ;  
+	SET Gqvc.Log.v.Delimiter = ; 
+END SUB 
+// ****************************** End Sub ****************************** 
+///$tab Calendar Management 
+// Calendar Management - Functions for creating and maintaining generic calendars 
+
+
+// ****************************** Start Sub ****************************** 
+/* 
+Builds a generic calendar based on an existing date field, in the data model. 
+
+
+@param 1 String. Existing date field Name 
+@param 2 String. New calendar table name 
+@param 3 String, Optional. Calendar field name prefix 
+
+
+@syntax CALL Gqvc.CreateCalendarFromField('FieldName', 'NewTableName',['FieldPrefix']); 
+*/ 
+SUB Gqvc.CreateCalendarFromField(FieldName,TableName,FieldPrefix) 
+
+
+	IF $(Gqvc.Macro.v.FieldExists('$(FieldName)')) = -1 THEN 
+	    TRACE Date Field: [$(FieldName)], does not exist. Calendar table cannot be created;		 
+	ELSE 
+		[$(TableName)]:	  
+		LOAD 
+			[_Date]					AS [$(FieldName)],		// Link on Field Name 
+			[_Date]					AS [%$(FieldName)],		// Link on %field name 
+			YEAR(_Date)				AS [$(FieldPrefix)Year], 
+			MONTH(_Date)			AS [$(FieldPrefix)Month], 
+			DAY(_Date)				AS [$(FieldPrefix)Day],	 
+			WEEK(_Date)				AS [$(FieldPrefix)Week], 
+			WEEKDAY(_Date)			AS [$(FieldPrefix)Day Name],	 
+			MONTHNAME(_Date)		AS [$(FieldPrefix)Month Year], 
+			QUARTERNAME(_Date)		AS [$(FieldPrefix)Quarter Name], 
+			'Q' & CEIL(MONTH(_Date)/3)		AS [$(FieldPrefix)Quarter] 
+		;			 
+		LOAD 
+			DATE(_MinDate + IterNo()) AS _Date 
+		WHILE 
+			_MinDate + IterNo() <= _MaxDate 
+		;		 
+		LOAD 
+			MIN(_DateField)-1 AS _MinDate, 
+			MAX(_DateField) AS _MaxDate 
+		;		 
+		LOAD 
+			FieldValue('$(FieldName)',RecNo()) AS _DateField 
+		AUTOGENERATE 
+			FieldValueCount('$(FieldName)');	 
+	END IF 
+END SUB 
+// ****************************** End Sub ****************************** 
+
+
+// ****************************** Start Sub ****************************** 
+/* 
+Builds a generic calendar based on a start and end date values. 
+
+
+@param 1 String. New calendar table name 
+@param 2 Number. Calendar start date in numeric format 
+@param 3 Number. Calendar end date in numeric format 
+@param 4 String, Optional. Calendar field name prefix 
+
+
+@syntax CALL Gqvc.CreateCalendar('NewTableName','','',['FieldPrefix']); 
+*/ 
+
+
+SUB Gqvc.CreateCalendar(TableName,StartDate,EndDate,FieldPrefix) 
+	IF $(Gqvc.Macro.v.TableExists('$(TableName)')) <> -1 THEN 
+	    TRACE Table: [$(TableName)], already exist. Calendar table cannot be created;		 
+	ELSEIF $(StartDate) > $(EndDate) THEN 
+		TRACE Start date should be less than or equal to End date. Calendar Table: [$(TableName)], will not be created;	 
+	ELSE	 
+		[$(TableName)]:	  
+		LOAD 
+			[_Date]					AS [$(FieldPrefix)Date],		// Link on Field Name 
+			NUM([_Date])			AS [%$(FieldPrefix)Date],		// Link on %field name 
+			YEAR(_Date)				AS [$(FieldPrefix)Year], 
+			MONTH(_Date)			AS [$(FieldPrefix)Month], 
+			DAY(_Date)				AS [$(FieldPrefix)Day],	 
+			WEEK(_Date)				AS [$(FieldPrefix)Week], 
+			WEEKDAY(_Date)			AS [$(FieldPrefix)Day Name],	 
+			MONTHNAME(_Date)		AS [$(FieldPrefix)Month Year], 
+			QUARTERNAME(_Date)		AS [$(FieldPrefix)Quarter Name], 
+			'Q' & CEIL(MONTH(_Date)/3)		AS [$(FieldPrefix)Quarter] 
+		;	  
+		LOAD 
+			DATE(_MinDate + IterNo()) AS _Date 
+		WHILE 
+			_MinDate + IterNo() <= _MaxDate 
+		;		 
+		LOAD 
+			$(StartDate)-1 AS _MinDate, 
+			$(EndDate) AS _MaxDate 
+		AUTOGENERATE (1);	 
+		; 
+	END IF 
+END SUB 
+// ****************************** End Sub ****************************** 
+///$tab DB Management 
+// ****************************** Start Sub ****************************** 
+SUB Gqvc.GetTimestampFromSqlDB(ReturnDBTimestamp) 
+/* 
+Retrieves the current timestamp from the DB.   
+@syntax CALL Gqvc.GetTimestampFromSqlDB; 
 */	
-SUB Gqvc.GetTimestampFromSqlDB(ReturnDBTimestamp)
+	TempTimestampFromDB: 
+	REPLACE LOAD *; 
+	SQL SELECT GETDATE() AS CurrentTimestampFromDB; 
+	 
+	LET ReturnDBTimestamp = TIMESTAMP(FieldValue('CurrentTimestampFromDB',1)); 
 
-	TempTimestampFromDB:
-	REPLACE LOAD *;
-	SQL SELECT GETDATE() AS CurrentTimestampFromDB;
-	
-	LET ReturnDBTimestamp = TIMESTAMP(FieldValue('CurrentTimestampFromDB',1));
 
-	TRACE Gqvc.GetTimestampFromSqlDB:[$(ReturnDBTimestamp)];
-	CALL Gqvc.DropTable('TempTimestampFromDB');
-END SUB
-// ****************************** End Sub ******************************
+	TRACE Gqvc.GetTimestampFromSqlDB:[$(ReturnDBTimestamp)]; 
+	CALL Gqvc.DropTable('TempTimestampFromDB'); 
+END SUB 
+// ****************************** End Sub ****************************** 
 
-// ****************************** Start Sub ******************************
-SUB Gqvc.GetTimestampFromOracleDB(ReturnDBTimestamp)
-/*
-Retrieves the current timestamp from the DB.
-@syntax CALL Gqvc.GetTimestampFromOracleDB;
-*/	
-	TempTimestampFromDB:
-	REPLACE LOAD *;
-	SQL SELECT SYSDATE "CurrentTimestampFromDB" FROM DUAL;
-	
-	LET ReturnDBTimestamp = TIMESTAMP(FieldValue('CurrentTimestampFromDB',1));
 
-	TRACE Gqvc.GetTimestampFromOracleDB:[$(ReturnDBTimestamp)];
-	CALL Gqvc.DropTable('TempTimestampFromDB');
-END SUB
-// ****************************** End Sub ******************************
-///$tab Cleanup
-// Cleanup Gqvc created temporary variables, fields and tables
+// ****************************** Start Sub ****************************** 
+SUB Gqvc.GetTimestampFromOracleDB(ReturnDBTimestamp) 
+/* 
+Retrieves the current timestamp from the DB. 
+@syntax CALL Gqvc.GetTimestampFromOracleDB; 
+*/	 
+	TempTimestampFromDB: 
+	REPLACE LOAD *; 
+	SQL SELECT SYSDATE "CurrentTimestampFromDB" FROM DUAL; 
+	 
+	LET ReturnDBTimestamp = TIMESTAMP(FieldValue('CurrentTimestampFromDB',1)); 
 
-// ****************************** Start Sub ******************************
-/*
-Cleanup
-@syntax CALL Gqvc.Cleanup;
-*/
 
-SUB Gqvc.Cleanup
-	 CALL Gqvc.CleanupVariables
-END SUB
-// ****************************** End Sub ******************************
+	TRACE Gqvc.GetTimestampFromOracleDB:[$(ReturnDBTimestamp)]; 
+	CALL Gqvc.DropTable('TempTimestampFromDB'); 
+END SUB 
+// ****************************** End Sub ****************************** 
+///$tab Cleanup 
+// Cleanup Gqvc created temporary variables, fields and tables 
 
-// ****************************** Start Sub ******************************
-/*
-Cleanup Variables
-@syntax CALL Gqvc.CleanupVariables;
-*/
+// ****************************** Start Sub ****************************** 
+/* 
+Cleanup 
+@syntax CALL Gqvc.Cleanup; 
+*/ 
 
-SUB Gqvc.CleanupVariables
-	// Directory
-	SET v.ResolvedDirectoryPath = ;
-	SET v.NodeCount = ;
-	SET v.FixedPath = ;
-	SET v.ResolvedRelativePath = ;
+SUB Gqvc.Cleanup 
+	 CALL Gqvc.CleanupVariables 
+//	 CALL Gqvc.CleanupReservedVariables
+	 CALL Gqvc.CleanupMacros
+END SUB 
+// ****************************** End Sub ****************************** 
 
-	// Log	
-	SET Gqvc.Log.v.NewRun = ;
-	
-	// DB
-	SET ReturnDBTimestamp = ;
-END SUB
-// ****************************** End Sub ******************************
+
+// ****************************** Start Sub ****************************** 
+/* 
+Cleanup Variables 
+@syntax CALL Gqvc.CleanupVariables; 
+*/ 
+SUB Gqvc.CleanupVariables 
+	// Directory 
+	LET v.ResolvedDirectoryPath =; 
+	LET v.NodeCount =; 
+	LET v.FixedPath =; 
+	LET v.ResolvedRelativePath =; 
+
+	// Log	 
+	LET Gqvc.Log.v.NewRun =; 
+	 
+	// DB 
+	LET ReturnDBTimestamp =; 
+END SUB 
+// ****************************** End Sub ****************************** 
+
+// ****************************** Start Sub ****************************** 
+/* 
+Cleanup 
+@syntax CALL Gqvc.CleanupMacros; 
+*/ 
+
+SUB Gqvc.CleanupMacros 
+	LET Gqvc.Macro.v.CreateBitString =; 
+	LET Gqvc.Macro.v.CreateRandomName =; 
+	LET Gqvc.Macro.v.DefaultIfEmpty =; 
+	LET Gqvc.Macro.v.FieldExists =; 	 
+	LET Gqvc.Macro.v.FileExists =;
+	LET Gqvc.Macro.v.IsReserved =;
+	LET Gqvc.Macro.v.TableExists =;
+END SUB 
+// ****************************** End Sub ****************************** 
