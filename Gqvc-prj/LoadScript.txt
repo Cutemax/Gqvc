@@ -2,10 +2,9 @@
 // ***************	Generic Qlikview Components Library	*************** 
 // ***************	Author: Syed Maqsood	*************** 
 // ***************	First version Date: 19/09/2014	*************** 
-// ***************	Last modified Date: 18/05/2015	*************** 
+// ***************	Last modified Date: 09/07/2015	*************** 
 
-
-SET Gqvc.ChangeLog.v.Version = '4.0.3'; 
+SET Gqvc.ChangeLog.v.Version = '4.0.5'; 
 TRACE Gqvc Version: $(Gqvc.ChangeLog.v.Version); 
 ///$tab Change Log 
 /* *********************** Change Log *********************** 
@@ -34,6 +33,8 @@ Date||Version||Change Description
 21/01/2015||4.0.2||"Gqvc.Macro.v.CreateRandomName" produces relatively more unique numbers and reduces chances of name collision. Updated "GetFieldValues" & "ReduceDataQvd" to use macro definitions. 
 18/06/2015||4.0.3||Fix for Gqvc.LogEvent to handle filename with spaces, Gqvc.ResolvePath to handle non-existing directories when called by CreateDirectory.
 18/06/2015||4.0.3||Added Gqvc.CleanupMacros to cleanup routine and removed Gqvc.DeleteDirectory routine due to security risk
+24/06/2015||4.0.4||Minor fix to Gqvc.CreateCalendarFromField routine, which was excluding last date record & enabled logging to file
+09/07/2015||4.0.5||Bug fix on Gqvc.StoreDropAllTablesToQvd. Loop failed to pick correct tablenames when reserved table "Gqvc" survived delete. 
 */ 
 ///$tab Script Macros 
 // Macros  
@@ -231,12 +232,14 @@ END SUB
 SUB Gqvc.StoreAllTablesToQvd(QvdDirectory) 
         TRACE StoreAllTablesToQvd(QvdDirectory:[$(QvdDirectory)]); 
 		 
-        FOR i = 0 TO NoOfTables()-1 
-			CALL Gqvc.StoreDataQvd(TableName(i),QvdDirectory); 
+        FOR i = 0 TO NoOfTables()-1
+        	LET Gqvc.v.QVD.TableName	=	TableName(i); 
+			CALL Gqvc.StoreDataQvd('$(Gqvc.v.QVD.TableName)',QvdDirectory); 
         NEXT 
       
      // Cleanup.. 
      SET i=;  
+     SET Gqvc.v.QVD.TableName=;
 END SUB 
 // ****************************** End Sub ****************************** 
 
@@ -249,11 +252,22 @@ END SUB
 SUB Gqvc.StoreDropAllTablesToQvd(QvdDirectory) 
         TRACE StoreDropAllTablesToQvd(QvdDirectory:[$(QvdDirectory)]); 
 		 
-        FOR i = 0 TO NoOfTables()-1 
-			CALL Gqvc.StoreDropDataQvd(TableName(i),QvdDirectory); 
+        FOR i = 0 TO NoOfTables()-1
+			[Gqvc.TablesToDrop]:
+			LOAD
+				TABLENAME($(i))	AS Gqvc.TableNameToDrop
+			AUTOGENERATE 1;
         NEXT 
-     // Cleanup.. 
-     SET i=;  
+		FOR i=0 TO NoOfRows('Gqvc.TablesToDrop')-1
+        	LET Gqvc.v.QVD.TableName	=	PEEK('Gqvc.TableNameToDrop',$(i),'Gqvc.TablesToDrop');
+        	CALL Gqvc.StoreDropDataQvd('$(Gqvc.v.QVD.TableName)',QvdDirectory);  
+		NEXT
+
+	// Drop table
+	DROP TABLE [Gqvc.TablesToDrop];
+     // Cleanup..
+     SET i=; 
+     SET Gqvc.v.QVD.TableName=; 
 END SUB 
 // ****************************** End Sub ****************************** 
 
@@ -589,11 +603,14 @@ Builds a generic calendar based on an existing date field, in the data model.
 
 @syntax CALL Gqvc.CreateCalendarFromField('FieldName', 'NewTableName',['FieldPrefix']); 
 */ 
-SUB Gqvc.CreateCalendarFromField(FieldName,TableName,FieldPrefix) 
-
-
-	IF $(Gqvc.Macro.v.FieldExists('$(FieldName)')) = -1 THEN 
-	    TRACE Date Field: [$(FieldName)], does not exist. Calendar table cannot be created;		 
+SUB Gqvc.CreateCalendarFromField(FieldName,TableName,FieldPrefix)
+ 
+	IF $(Gqvc.Macro.v.TableExists('$(TableName)')) <> -1 THEN 
+	    TRACE Table: [$(TableName)], already exist. Calendar table cannot be created;
+	    CALL Gqvc.LogEvent('Table: [$(TableName)], already exist. Calendar table cannot be created','E');
+	ELSEIF $(Gqvc.Macro.v.FieldExists('$(FieldName)')) = -1 THEN 
+	    TRACE Date Field: [$(FieldName)], does not exist. Calendar table cannot be created;
+	    CALL Gqvc.LogEvent('Date Field: [$(FieldName)], does not exist. Calendar table cannot be created','E'); 		 
 	ELSE 
 		[$(TableName)]:	  
 		LOAD 
@@ -611,7 +628,7 @@ SUB Gqvc.CreateCalendarFromField(FieldName,TableName,FieldPrefix)
 		LOAD 
 			DATE(_MinDate + IterNo()) AS _Date 
 		WHILE 
-			_MinDate + IterNo() <= _MaxDate 
+			_MinDate + IterNo() <= _MaxDate + 1
 		;		 
 		LOAD 
 			MIN(_DateField)-1 AS _MinDate, 
@@ -643,9 +660,11 @@ Builds a generic calendar based on a start and end date values.
 
 SUB Gqvc.CreateCalendar(TableName,StartDate,EndDate,FieldPrefix) 
 	IF $(Gqvc.Macro.v.TableExists('$(TableName)')) <> -1 THEN 
-	    TRACE Table: [$(TableName)], already exist. Calendar table cannot be created;		 
+	    TRACE Table: [$(TableName)], already exist. Calendar table cannot be created;
+	    CALL Gqvc.LogEvent('Table: [$(TableName)], already exist. Calendar table cannot be created','E');		 
 	ELSEIF $(StartDate) > $(EndDate) THEN 
-		TRACE Start date should be less than or equal to End date. Calendar Table: [$(TableName)], will not be created;	 
+		TRACE Start date should be less than or equal to End date. Calendar Table: [$(TableName)], will not be created;
+		CALL Gqvc.LogEvent('Start date should be less than or equal to End date. Calendar Table: [$(TableName)], will not be created','E');	 
 	ELSE	 
 		[$(TableName)]:	  
 		LOAD 
@@ -722,7 +741,7 @@ Cleanup
 SUB Gqvc.Cleanup 
 	 CALL Gqvc.CleanupVariables 
 //	 CALL Gqvc.CleanupReservedVariables
-	 CALL Gqvc.CleanupMacros
+//	 CALL Gqvc.CleanupMacros
 END SUB 
 // ****************************** End Sub ****************************** 
 
@@ -744,6 +763,7 @@ SUB Gqvc.CleanupVariables
 	 
 	// DB 
 	LET ReturnDBTimestamp =; 
+	
 END SUB 
 // ****************************** End Sub ****************************** 
 
