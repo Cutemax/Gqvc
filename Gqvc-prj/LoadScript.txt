@@ -40,7 +40,7 @@ Date||Version||Change Description
 24/06/2015||4.0.4||Minor fix to Gqvc.CreateCalendarFromField routine, which was excluding last date record & enabled logging to file
 09/07/2015||4.0.5||Bug fix on Gqvc.StoreDropAllTablesToQvd. Loop failed to pick correct tablenames when reserved "Gqvc" survived delete.
 21/07/2015||4.1.0||Added Gqvc Configuration variables and improved Cleanup routines to remove Gqvc variables & tables in a controlled manner.
-27/07/2015||4.2.0||Gqvc.RecursiveDirectory & Gqvc.RecursiveFile released for use
+27/07/2015||4.2.0||Gqvc.RecursiveDirectory & Gqvc.RecursiveFile released for use. Log management enhanced to use configuration settings.
 ];
 
 LET Gqvc.ChangeLog.v.Version = PEEK('Gqvc.Version',-1,'Gqvc.Version'); 
@@ -57,8 +57,9 @@ SET Gqvc.Config.v.SystemAccessMode = 1;
 
 /* Gqvc.Config.v.LogMode settings
 0 -> No log created 
-1 -> Log file stored & read as data file. Log will not be created until script has successfully ran. 
-2 -> Can create log files at run time; Requires Settings -> "Can Execute External Programs" 
+1 -> Log file stored & read as flat file. Log will not be created until script has successfully ran and Gqvc.Cleanup called at the end of script.
+2 -> Log file stored as QVD. Log will not be created until script has successfully ran and Gqvc.Cleanup called at the end of script.
+3 -> Can create logs, as flat file, at run time; Requires Settings -> "Can Execute External Programs" 
 */ 
 SET Gqvc.Config.v.LogMode = 0;
 
@@ -326,32 +327,27 @@ Removes all *.qvd files from a directory (and sub directories if parameter is In
 @syntax CALL Gqvc.DeleteAllQvdFilesFromDirectory('DirectoryPath', ['IncludeSubDirectories']); 
 */ 
 SUB Gqvc.DeleteAllQvdFilesFromDirectory(DirectoryPath, IncludeSubDirectories) 
+	TRACE DeleteAllQvdFilesFromDirectory(DirectoryPath:[$(DirectoryPath)]) 
+		IncludeSubDirectories:[$(IncludeSubDirectories)] ; 
+		 
+	LET _IncludeSubDirectories = $(Gqvc.Macro.v.DefaultIfEmpty('$(IncludeSubDirectories)',0)); //if(len('$(IncludeSubDirectories)')>0,1,0); 
+
+	CALL Gqvc.ResolvePath('$(DirectoryPath)'); 
+
 	IF Gqvc.Config.v.SystemAccessMode <> 2 THEN
-		TRACE Insufficient permissions! Security settings does not allow QVD delete operation;
-		CALL Gqvc.LogEvent('Insufficient permissions! Security settings does not allow QVD delete operation','E');
-	ELSE	
-		TRACE DeleteAllQvdFilesFromDirectory(DirectoryPath:[$(DirectoryPath)]) 
-			IncludeSubDirectories:[$(IncludeSubDirectories)] ; 
-			 
-		LET _IncludeSubDirectories = $(Gqvc.Macro.v.DefaultIfEmpty('$(IncludeSubDirectories)',0)); //if(len('$(IncludeSubDirectories)')>0,1,0); 
-	
-		CALL Gqvc.ResolvePath('$(DirectoryPath)'); 
-	
-		IF Gqvc.Config.v.SystemAccessMode <> 2 THEN
-			TRACE Insufficient privilege. No QVDs will be deleted from Directory [$(DirectoryPath)];
-			CALL Gqvc.LogEvent('Insufficient privilege. No QVDs will be deleted from Directory [$(DirectoryPath)]','E');
-		ELSEIF FileTime('$(v.ResolvedDirectoryPath)\*.*') > 0 THEN 
-			 IF(_IncludeSubDirectories) THEN 
-				TRACE Deleting ALL QVDs from Directory $(DirectoryPath) and ALL sub directories; 
-				EXECUTE cmd /C DEL /S "$(v.ResolvedDirectoryPath)\*.qvd"; 
-			 ELSE 
-				  TRACE Deleting ALL QVDs from Directory $(DirectoryPath); 
-				  EXECUTE cmd /C DEL "$(v.ResolvedDirectoryPath)\*.qvd"; 
-			 END IF 
-		ELSE 
-				TRACE Directory does not exist $(DirectoryPath); 
-		END IF 
-	END IF
+		TRACE Insufficient privilege. No QVDs will be deleted from Directory [$(DirectoryPath)];
+		CALL Gqvc.LogEvent('Insufficient privilege. No QVDs will be deleted from Directory [$(DirectoryPath)]','E');
+	ELSEIF FileTime('$(v.ResolvedDirectoryPath)\*.*') > 0 THEN 
+		 IF(_IncludeSubDirectories) THEN 
+			TRACE Deleting ALL QVDs from Directory $(DirectoryPath) and ALL sub directories; 
+			EXECUTE cmd /C DEL /S "$(v.ResolvedDirectoryPath)\*.qvd"; 
+		 ELSE 
+			  TRACE Deleting ALL QVDs from Directory $(DirectoryPath); 
+			  EXECUTE cmd /C DEL "$(v.ResolvedDirectoryPath)\*.qvd"; 
+		 END IF 
+	ELSE 
+			TRACE Directory does not exist $(DirectoryPath); 
+	END IF 
 	SET _IncludeSubDirectories=; // Reset 
 END SUB 
 // ****************************** End Sub ****************************** 
@@ -368,7 +364,6 @@ END SUB
 // @syntax CALL Gqvc.ReduceDataQvd('QvdName', 'QvdPath',RecordsToRetain); 
 // @E.g., CALL Gqvc.ReduceDataQvd('Sales Data', '..\Data\Sales',100000); 
 SUB Gqvc.ReduceDataQvd(QvdName, QvdPath, RecordsToRetain) 
-
 
 	CALL Gqvc.ResolvePath('$(QvdPath)'); 
 	LET Gqvc.Qvd.v.QvdFileName = '$(v.ResolvedDirectoryPath)\$(QvdName).qvd' ; 
@@ -544,7 +539,8 @@ Recursive through directory path
 	1 -> To pass only LoopBackParm as an argument to calling sub routine or Loop back
 	2 -> To pass both directory path and LoopBackParm as an argument to calling sub routine or Loop back
 	default -> If Loopback parameter is present, send both directory and LoopBackParm othewise send only Directory
-@syntax CALL Gqvc.RecursiveDirectory('.\',1,'Gqvc.LogEvent','Repeats log message for each directory scanned',2); 
+@syntax CALL Gqvc.RecursiveDirectory('DirectoryPath',IncludeSubfolder,'LoopBack','LoopBackParm',ParmOverride]); 
+Example: CALL Gqvc.RecursiveDirectory('.\',1,'Gqvc.LogEvent','Repeats log message for each directory scanned',1); 
 */ 
 // Initialise
 LET Gqvc.Rcrv.v.Mask =;
@@ -626,60 +622,103 @@ END SUB
 ///$tab Log Management 
 // Log Management - Functions for creating and maintaining document specific logs 
 
-
 // ****************************** Start Sub ****************************** 
 /* 
 Creates a log file and writes event instantly. If a log file does not exists, it creates one, otherwise it appends to the log file. 
 
-
 @param 1 String. Log message 
-@param 2 String, Optional. Log level. Acceptable values 'E', 'I' and 'W' (case insensitive) for Error, Information and Warning respectively. Default is Information. 
+@param 2 String, Optional. Log level. Acceptable values 'E', 'I' and 'W' (case insensitive) for Error, Information and Warning respectively. Default is Information.
+@param 3 String, Optional. Store path for log file, if different from current directory. By default, log is stored in same directory as the QV doc.
 @syntax CALL Gqvc.LogEvent('LogMessage',['LogLevel']); 
 */ 
 SET Gqvc.Log.v.NewRun = ; // Resets for each run 
-SUB Gqvc.LogEvent(LogMessage,LogLevel) 
-
+SUB Gqvc.LogEvent(LogMessage,LogLevel,DirectoryPath) 
 
 	IF LEN(LogLevel) > 0 THEN 
 		LET Gqvc.Log.v.LogLevel = IF(UPPER(LEFT(LogLevel,1)) = 'W','Warning',IF(UPPER(LEFT(LogLevel,1)) = 'E','Error','Information')); 
 	ELSE 
 		LET Gqvc.Log.v.LogLevel = 'Information';	 
 	END IF 
-	 
-	LET Gqvc.Log.v.LogFileName = TEXT(REPLACE(DOCUMENTNAME(),SUBFIELD(DOCUMENTNAME(),'.',-1),'log'));  //TEXT(DOCUMENTNAME() & '.log'); 
-	LET Gqvc.Log.v.LogExists = IF(FILETIME(REPLACE(DOCUMENTPATH(),DOCUMENTNAME(),'')&'$(Gqvc.Log.v.LogFileName)') > 0,-1,0); 
+	
+	CALL Gqvc.ResolvePath($(Gqvc.Macro.v.DefaultIfEmpty('$(DirectoryPath)','.\')));
+	
+	LET Gqvc.Log.v.LogFilePath = '$(v.ResolvedDirectoryPath)\';
+	LET Gqvc.Log.v.LogFileName =  TEXT(REPLACE(DOCUMENTNAME(),SUBFIELD(DOCUMENTNAME(),'.',-1),PICK(MATCH($(Gqvc.Config.v.LogMode),1,2,3),'log','qvd','log')));
+	LET Gqvc.Log.v.LogExists = IF(FILETIME('$(Gqvc.Log.v.LogFilePath)' & '$(Gqvc.Log.v.LogFileName)')>0,-1,0);
+	//IF(FILETIME(REPLACE($(Gqvc.Macro.v.DefaultIfEmpty('$(DirectoryPath)',DocumentPath())),DOCUMENTNAME(),'')&'$(Gqvc.Log.v.LogFileName)') > 0,-1,0); 
+	
+	IF MATCH(Gqvc.Config.v.LogMode,1,2)>0 THEN
+		LET Gqvc.Log.v.FileFormat = PICK(MATCH(Gqvc.Config.v.LogMode,1,2),'(txt, codepage is 1252, no labels, delimiter is ' & CHR(39) & '\t' & CHR(39) &', msq)','(qvd)');
+		LET Gqvc.Log.v.Fields = PICK(MATCH(Gqvc.Config.v.LogMode,1,2),'@1 as Gqvc.LogTimestamp,@2 as Gqvc.LogLevel,@3 as Gqvc.User,@4 as Gqvc.LogMessage','Gqvc.LogTimestamp,Gqvc.LogLevel,Gqvc.User,Gqvc.LogMessage');	
+		
+		IF $(Gqvc.Macro.v.TableExists('Gqvc.Logs'))=-1 AND Gqvc.Log.v.LogExists=-1 THEN // If in memory tables doesn't exists but file exists then load in memory
+			[Gqvc.Logs]:
+			LOAD 
+				$(Gqvc.Log.v.Fields)
+			FROM [$(Gqvc.Log.v.LogFilePath)$(Gqvc.Log.v.LogFileName)] $(Gqvc.Log.v.FileFormat);			
+		END IF
+		
+		LET Gqvc.Log.v.Concat = IF($(Gqvc.Macro.v.TableExists('Gqvc.Logs'))=0,'CONCATENATE',''); // required to identify merge to existing table or is it a new log
+		
+		IF Len('$(Gqvc.Log.v.NewRun)')=0 THEN
+			[Gqvc.Logs]:
+			$(Gqvc.Log.v.Concat)
+			LOAD
+				TIMESTAMP(NOW()) 			AS	Gqvc.LogTimestamp,
+				'$(Gqvc.Log.v.LogLevel)'	AS	Gqvc.LogLevel,
+				OSUser()					AS	Gqvc.User,
+				'===== New Load ====='		AS	Gqvc.LogMessage
+			AUTOGENERATE 1;
+			
+			SET Gqvc.Log.v.NewRun = 0;
+		END IF
+		
+		[Gqvc.Logs]:
+		$(Gqvc.Log.v.Concat)
+		LOAD
+			TIMESTAMP(NOW()) 			AS	Gqvc.LogTimestamp,
+			'$(Gqvc.Log.v.LogLevel)'	AS	Gqvc.LogLevel,
+			OSUser()					AS	Gqvc.User,
+			'$(LogMessage)'				AS	Gqvc.LogMessage
+		AUTOGENERATE 1;
+	
+	// for 	
+	ELSEIF Gqvc.Config.v.LogMode = 3 THEN
 		 
-	LET Gqvc.Log.v.SingleRedirection = CHR(62); 
-	LET Gqvc.Log.v.DoubleRedirection = CHR(62)&CHR(62); 
-	LET Gqvc.Log.v.Delimiter = CHR(9); // 9 = Horizontal tab 
-	 
-	LET Gqvc.Log.v.LogMessage = TIMESTAMP(NOW()) & '$(Gqvc.Log.v.Delimiter)' & '$(Gqvc.Log.v.LogLevel)' & '$(Gqvc.Log.v.Delimiter)' & OSUser() & '$(Gqvc.Log.v.Delimiter)' & '$(LogMessage)'; 
-	LET Gqvc.Log.v.NewLoadText = TIMESTAMP(NOW()) & '$(Gqvc.Log.v.Delimiter)' & 'Information' & '$(Gqvc.Log.v.Delimiter)' & OSUser() & '$(Gqvc.Log.v.Delimiter)' & '===== New Load ====='; 
-
-
-	TRACE Gqvc.LogEvent(LogMessage:[$(LogMessage)], LogLevel:[$(Gqvc.Log.v.LogLevel)]); 
-	IF Gqvc.Log.v.LogExists = -1 THEN 
-		IF Len('$(Gqvc.Log.v.NewRun)')=0 THEN 	// check if this is a new run.  
-			EXECUTE CMD /C ECHO $(Gqvc.Log.v.NewLoadText) $(Gqvc.Log.v.DoubleRedirection) "$(Gqvc.Log.v.LogFileName)";					 
-			SET Gqvc.Log.v.NewRun = 0; 
+		LET Gqvc.Log.v.SingleRedirection = CHR(62); 
+		LET Gqvc.Log.v.DoubleRedirection = CHR(62)&CHR(62); 
+		LET Gqvc.Log.v.Delimiter = CHR(9); // 9 = Horizontal tab 
+		 
+		LET Gqvc.Log.v.LogMessage = TIMESTAMP(NOW()) & '$(Gqvc.Log.v.Delimiter)' & '$(Gqvc.Log.v.LogLevel)' & '$(Gqvc.Log.v.Delimiter)' & OSUser() & '$(Gqvc.Log.v.Delimiter)' & '$(LogMessage)'; 
+		LET Gqvc.Log.v.NewLoadText = TIMESTAMP(NOW()) & '$(Gqvc.Log.v.Delimiter)' & 'Information' & '$(Gqvc.Log.v.Delimiter)' & OSUser() & '$(Gqvc.Log.v.Delimiter)' & '===== New Load ====='; 
+	
+	
+		TRACE Gqvc.LogEvent(LogMessage:[$(LogMessage)], LogLevel:[$(Gqvc.Log.v.LogLevel)]); 
+		IF Gqvc.Log.v.LogExists = -1 THEN 
+			IF Len('$(Gqvc.Log.v.NewRun)')=0 THEN 	// check if this is a new run.  
+				EXECUTE CMD /C ECHO $(Gqvc.Log.v.NewLoadText) $(Gqvc.Log.v.DoubleRedirection) "$(Gqvc.Log.v.LogFileName)";					 
+				SET Gqvc.Log.v.NewRun = 0; 
+			END IF 
+			EXECUTE CMD /C ECHO $(Gqvc.Log.v.LogMessage) $(Gqvc.Log.v.DoubleRedirection) "$(Gqvc.Log.v.LogFileName)";		 
+		ELSE 
+				EXECUTE CMD /C ECHO $(Gqvc.Log.v.NewLoadText) $(Gqvc.Log.v.SingleRedirection) "$(Gqvc.Log.v.LogFileName)";					 
+				SET Gqvc.Log.v.NewRun = 0; 
+				EXECUTE CMD /C ECHO $(Gqvc.Log.v.LogMessage) $(Gqvc.Log.v.DoubleRedirection) "$(Gqvc.Log.v.LogFileName)"; 
 		END IF 
-		EXECUTE CMD /C ECHO $(Gqvc.Log.v.LogMessage) $(Gqvc.Log.v.DoubleRedirection) "$(Gqvc.Log.v.LogFileName)";		 
-	ELSE 
-			EXECUTE CMD /C ECHO $(Gqvc.Log.v.NewLoadText) $(Gqvc.Log.v.SingleRedirection) "$(Gqvc.Log.v.LogFileName)";					 
-			SET Gqvc.Log.v.NewRun = 0; 
-			EXECUTE CMD /C ECHO $(Gqvc.Log.v.LogMessage) $(Gqvc.Log.v.DoubleRedirection) "$(Gqvc.Log.v.LogFileName)"; 
-	END IF 
-
-
+	END IF
+	
 	// Cleanup.. 
 	SET	Gqvc.Log.v.LogExists = ; 
-	SET Gqvc.Log.v.LogFileName = ; 
+//	 
 	SET Gqvc.Log.v.SingleRedirection = ; 
 	SET Gqvc.Log.v.DoubleRedirection = ; 
 	SET Gqvc.Log.v.LogMessage = ; 
 	SET Gqvc.Log.v.LogLevel = ; 
 	SET Gqvc.Log.v.NewLoadText = ;  
-	SET Gqvc.Log.v.Delimiter = ; 
+	SET Gqvc.Log.v.Delimiter = ;
+	SET Gqvc.Log.v.LogExists =; 
+	SET Gqvc.Log.v.Fields =;
+	SET Gqvc.Log.v.Concat =;
 END SUB 
 // ****************************** End Sub ****************************** 
 ///$tab Calendar Management 
@@ -834,6 +873,7 @@ Cleanup
 */ 
 
 SUB Gqvc.Cleanup
+	CALL Gqvc.CleanupLogs
 	CALL Gqvc.CleanupReservedTables 
 	CALL Gqvc.CleanupVariables 
 	CALL Gqvc.CleanupMacros
@@ -942,3 +982,16 @@ SUB Gqvc.CleanupReservedTables
 	SET Gqvc.Cleanup.v.TableName =;	
 END SUB 
 // ****************************** End Sub ****************************** 
+
+SUB Gqvc.CleanupLogs
+	IF $(Gqvc.Macro.v.TableExists('Gqvc.Logs')) = 0 THEN 
+		STORE [Gqvc.Logs] INTO [$(Gqvc.Log.v.LogFilePath)$(Gqvc.Log.v.LogFileName)] $(Gqvc.Log.v.FileFormat);
+		DROP TABLE [Gqvc.Logs];
+	END IF
+	
+	// Cleanup
+	SET Gqvc.Log.v.LogFileName = ;
+	SET Gqvc.Log.v.LogFilePath = ;
+	SET Gqvc.Log.v.FileFormat = ;
+	
+END SUB
