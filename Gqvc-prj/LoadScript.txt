@@ -2,7 +2,7 @@
 // ***************	Generic Qlikview Components Library	*************** 
 // ***************	Author: Syed Maqsood	*************** 
 // ***************	First version Date: 19/09/2014	*************** 
-// ***************	Last modified Date: 27/07/2015	*************** 
+// ***************	Last modified Date: 05/08/2015	*************** 
 ///$tab Change Log 
 /* *********************** Change Log *********************** 
 Versioning convention 
@@ -41,6 +41,8 @@ Date||Version||Change Description
 09/07/2015||4.0.5||Bug fix on Gqvc.StoreDropAllTablesToQvd. Loop failed to pick correct tablenames when reserved "Gqvc" survived delete.
 21/07/2015||4.1.0||Added Gqvc Configuration variables and improved Cleanup routines to remove Gqvc variables & tables in a controlled manner.
 27/07/2015||4.2.0||Gqvc.RecursiveDirectory & Gqvc.RecursiveFile released for use. Log management enhanced to use configuration settings.
+31/07/2015||4.2.1||Fixed infinite loop bug with Gqvc.RecursiveDirectory, when Gqvc.LogEvent or its helper functions were used as Loop parameters.
+05/08/2015||4.2.2||Fixed bug with Gqvc.LogEvent when using "STORE" command to write to text file.
 ];
 
 LET Gqvc.ChangeLog.v.Version = PEEK('Gqvc.Version',-1,'Gqvc.Version'); 
@@ -53,7 +55,8 @@ TRACE Gqvc Version: $(Gqvc.ChangeLog.v.Version);
 1 -> Creates files/folders; Requires Settings -> "Can Execute External Programs" 
 2 -> Can create and delete files/folders; Requires Settings -> "Can Execute External Programs" 
 */
-SET Gqvc.Config.v.SystemAccessMode = 1;
+SET Gqvc.Config.v.SystemAccessMode = 2;
+TRACE Gqvc.Config.v.SystemAccessMode = $(Gqvc.Config.v.SystemAccessMode);
 
 /* Gqvc.Config.v.LogMode settings
 0 -> No log created 
@@ -61,7 +64,8 @@ SET Gqvc.Config.v.SystemAccessMode = 1;
 2 -> Log file stored as QVD. Log will not be created until script has successfully ran and Gqvc.Cleanup called at the end of script.
 3 -> Can create logs, as flat file, at run time; Requires Settings -> "Can Execute External Programs" 
 */ 
-SET Gqvc.Config.v.LogMode = 0;
+SET Gqvc.Config.v.LogMode = 1;
+TRACE Gqvc.Config.v.LogMode = $(Gqvc.Config.v.LogMode);
 
 /* Gqvc.Config.v.LogMode settings for Gqvc.Cleanup
 0 -> Deletes routines specific variables only
@@ -69,11 +73,13 @@ SET Gqvc.Config.v.LogMode = 0;
 2 -> Deletes all Gqvc variables except Gqvc.ChangeLog.v.Version 
 */ 
 SET Gqvc.Config.v.CleanupVariables = 0;
+TRACE Gqvc.Config.v.CleanupVariables = $(Gqvc.Config.v.CleanupVariables);
 
 /* Gqvc.Config.v.LogMode settings for Gqvc.Cleanup
 Gqvc.CleanupTables defines a matrix and mode to be deleted. It is a custimizable matrix and can include tables added in future
 */ 
 SET Gqvc.Config.v.CleanupTables = 5;
+TRACE Gqvc.Config.v.CleanupTables = $(Gqvc.Config.v.CleanupTables);
 
 [Gqvc.CleanupTables]:
 LOAD * INLINE [
@@ -122,7 +128,6 @@ INLINE [
 // ****************************** End Sub ****************************** 
 ///$tab Table Management 
 // Table Management - functions for managing Qlikview in-memory tables. 
-
 
 // ****************************** Start Sub ****************************** 
 /* 
@@ -472,7 +477,6 @@ END SUB
 /* 
 Resolves relative path in absolute path 
 
-
 @param 1 String. DirectoryPath: The path of the directory. 
 @syntax CALL Gqvc.ResolvePath('DirectoryPath'); 
 */ 
@@ -528,7 +532,7 @@ END SUB
 
 // ****************************** Start Sub ****************************** 
 /* 
-Recursive through directory path
+Recurse through directory path
 
 @param 1 String. DirectoryPath: The path of the directory. 
 @param 2 Numeric, default is 0. IncludeSubfolder: 0 -> to scan current directory only, 1 -> to scan all subdirectories
@@ -538,47 +542,46 @@ Recursive through directory path
 	0 -> To pass only directory path as an argument to calling sub routine or Loop back
 	1 -> To pass only LoopBackParm as an argument to calling sub routine or Loop back
 	2 -> To pass both directory path and LoopBackParm as an argument to calling sub routine or Loop back
-	default -> If Loopback parameter is present, send both directory and LoopBackParm othewise send only Directory
+	By default -> If Loopback parameter is present, send both directory and LoopBackParm othewise send only Directory
 @syntax CALL Gqvc.RecursiveDirectory('DirectoryPath',IncludeSubfolder,'LoopBack','LoopBackParm',ParmOverride]); 
 Example: CALL Gqvc.RecursiveDirectory('.\',1,'Gqvc.LogEvent','Repeats log message for each directory scanned',1); 
 */ 
 // Initialise
-LET Gqvc.Rcrv.v.Mask =;
-LET Gqvc.Rcrv.v.IncludeSubFolder =;
-LET Gqvc.Rcrv.v.LoopBackParm =;
-LET Gqvc.Rcrv.v.ParmOverride =;
-LET Gqvc.Rcrv.v.LoopBack =;
-LET Gqvc.Rcrv.v.Callback =;
+SET Gqvc.Rcrv.v.Mask =;
+SET Gqvc.Rcrv.v.IncludeSubFolder =;
+SET Gqvc.Rcrv.v.LoopBackParm =;
+SET Gqvc.Rcrv.v.ParmOverride =;
+SET Gqvc.Rcrv.v.LoopBack =;
+SET Gqvc.Rcrv.v.Callback =;
+
 SUB Gqvc.RecursiveDirectory(DirectoryPath,IncludeSubfolder,LoopBack,LoopBackParm,ParmOverride)
-	CALL Gqvc.ResolvePath(DirectoryPath); 
-	LET Gqvc.Rcrv.v.Mask = IF(RIGHT('$(v.ResolvedDirectoryPath)',1) = '\','*','\*');
+	CALL Gqvc.ResolvePath(DirectoryPath);
+	LET Gqvc.Rcrv.v.DirectoryPath = '$(v.ResolvedDirectoryPath)';
+	LET Gqvc.Rcrv.v.Mask = IF(RIGHT('$(Gqvc.Rcrv.v.DirectoryPath)',1) = '\','*','\*');
 	LET Gqvc.Rcrv.v.IncludeSubFolder = $(Gqvc.Macro.v.DefaultIfEmpty('$(IncludeSubfolder)',0));
 	LET Gqvc.Rcrv.v.LoopBackParm = $(Gqvc.Macro.v.DefaultIfEmpty('$(LoopBackParm)',''));
 	LET Gqvc.Rcrv.v.ParmOverride = $(Gqvc.Macro.v.DefaultIfEmpty('$(ParmOverride)',-1));    
 	LET Gqvc.Rcrv.v.LoopBack = $(Gqvc.Macro.v.DefaultIfEmpty('$(LoopBack)',''));
 	
-	IF Gqvc.Rcrv.v.IncludeSubFolder = 1 THEN
-		FOR Each Dir in dirlist (v.ResolvedDirectoryPath & '$(Gqvc.Rcrv.v.Mask)' )
-			LET Gqvc.Rcrv.v.Callback = IF(LEN(TRIM('$(Gqvc.Rcrv.v.LoopBack)'))>0,'CALL $(Gqvc.Rcrv.v.LoopBack)' & CHR(40) & CHR(39) & 
-										IF(($(Gqvc.Rcrv.v.ParmOverride)=-1 AND LEN(TRIM('$(Gqvc.Rcrv.v.LoopBackParm)'))=0) OR $(Gqvc.Rcrv.v.ParmOverride)=0,'$(Dir)',
-											IF(($(Gqvc.Rcrv.v.ParmOverride)=-1 AND LEN(TRIM('$(Gqvc.Rcrv.v.LoopBackParm)'))<>0) OR $(Gqvc.Rcrv.v.ParmOverride)=2,'$(Dir)' & CHR(39) & CHR(44) & CHR(39) & '$(Gqvc.Rcrv.v.LoopBackParm)',
-												IF($(Gqvc.Rcrv.v.ParmOverride)=1, '$(Gqvc.Rcrv.v.LoopBackParm)'))) & CHR(39) & CHR(41),'');				
-			TRACE Directory is [$(Dir)], Callback request [$(Gqvc.Rcrv.v.Callback)];
-			$(Gqvc.Rcrv.v.Callback);
+	// Initialise loopback routine parameters
+	LET Gqvc.Rcrv.v.Callback = IF(LEN(TRIM('$(Gqvc.Rcrv.v.LoopBack)'))>0,'CALL $(Gqvc.Rcrv.v.LoopBack)' & CHR(40) & CHR(39) & 
+							IF(($(Gqvc.Rcrv.v.ParmOverride)=-1 AND LEN(TRIM('$(Gqvc.Rcrv.v.LoopBackParm)'))=0) OR $(Gqvc.Rcrv.v.ParmOverride)=0,'$(Gqvc.Rcrv.v.DirectoryPath)',
+								IF(($(Gqvc.Rcrv.v.ParmOverride)=-1 AND LEN(TRIM('$(Gqvc.Rcrv.v.LoopBackParm)'))<>0) OR $(Gqvc.Rcrv.v.ParmOverride)=2,'$(Gqvc.Rcrv.v.DirectoryPath)' & CHR(39) & CHR(44) & CHR(39) & '$(Gqvc.Rcrv.v.LoopBackParm)',
+									IF($(Gqvc.Rcrv.v.ParmOverride)=1, '$(Gqvc.Rcrv.v.LoopBackParm)'))) & CHR(39) & CHR(41),'');
+	TRACE Directory is [$(Gqvc.Rcrv.v.DirectoryPath)], Callback request [$(Gqvc.Rcrv.v.Callback)];
+	$(Gqvc.Rcrv.v.Callback); // Call loopback routine
+	
+	IF Gqvc.Rcrv.v.IncludeSubFolder = 1 THEN // Recurse through the directory
+		FOR Each Dir in dirlist (Gqvc.Rcrv.v.DirectoryPath & '$(Gqvc.Rcrv.v.Mask)' )
+			TRACE Gqvc.RecursiveDirectory('$(Dir)',$(Gqvc.Rcrv.v.IncludeSubFolder),'$(Gqvc.Rcrv.v.LoopBack)','$(Gqvc.Rcrv.v.LoopBackParm)',$(Gqvc.Rcrv.v.ParmOverride)); 
 			CALL Gqvc.RecursiveDirectory('$(Dir)',$(Gqvc.Rcrv.v.IncludeSubFolder),'$(Gqvc.Rcrv.v.LoopBack)','$(Gqvc.Rcrv.v.LoopBackParm)',$(Gqvc.Rcrv.v.ParmOverride)); 
 		NEXT Dir
-	ELSE
-			LET Gqvc.Rcrv.v.Callback = IF(LEN(TRIM('$(Gqvc.Rcrv.v.LoopBack)'))>0,'CALL $(Gqvc.Rcrv.v.LoopBack)' & CHR(40) & CHR(39) & 
-										IF(($(Gqvc.Rcrv.v.ParmOverride)=-1 AND LEN(TRIM('$(Gqvc.Rcrv.v.LoopBackParm)'))=0) OR $(Gqvc.Rcrv.v.ParmOverride)=0,'$(v.ResolvedDirectoryPath)',
-											IF(($(Gqvc.Rcrv.v.ParmOverride)=-1 AND LEN(TRIM('$(Gqvc.Rcrv.v.LoopBackParm)'))<>0) OR $(Gqvc.Rcrv.v.ParmOverride)=2,'$(v.ResolvedDirectoryPath)' & CHR(39) & CHR(44) & CHR(39) & '$(Gqvc.Rcrv.v.LoopBackParm)',
-												IF($(Gqvc.Rcrv.v.ParmOverride)=1, '$(Gqvc.Rcrv.v.LoopBackParm)'))) & CHR(39) & CHR(41),'');
-			
-		TRACE Directory is [$(v.ResolvedDirectoryPath)], Callback request [$(Gqvc.Rcrv.v.Callback)];
-		$(Gqvc.Rcrv.v.Callback);
 	END IF
 	
 	// Cleanup
-	LET Gqvc.Rcrv.v.Callback =;	
+	SET Gqvc.Rcrv.v.Callback =;
+	SET IncludeSubfolder =;
+	SET ParmOverride =;	
 END SUB 
 
 /* 
@@ -629,8 +632,9 @@ Creates a log file and writes event instantly. If a log file does not exists, it
 @param 1 String. Log message 
 @param 2 String, Optional. Log level. Acceptable values 'E', 'I' and 'W' (case insensitive) for Error, Information and Warning respectively. Default is Information.
 @param 3 String, Optional. Store path for log file, if different from current directory. By default, log is stored in same directory as the QV doc.
-@syntax CALL Gqvc.LogEvent('LogMessage',['LogLevel']); 
-*/ 
+@syntax CALL Gqvc.LogEvent('LogMessage',['LogLevel'],['DirectoryPath']); 
+*/
+
 SET Gqvc.Log.v.NewRun = ; // Resets for each run 
 SUB Gqvc.LogEvent(LogMessage,LogLevel,DirectoryPath) 
 
@@ -643,13 +647,15 @@ SUB Gqvc.LogEvent(LogMessage,LogLevel,DirectoryPath)
 	CALL Gqvc.ResolvePath($(Gqvc.Macro.v.DefaultIfEmpty('$(DirectoryPath)','.\')));
 	
 	LET Gqvc.Log.v.LogFilePath = '$(v.ResolvedDirectoryPath)\';
-	LET Gqvc.Log.v.LogFileName =  TEXT(REPLACE(DOCUMENTNAME(),SUBFIELD(DOCUMENTNAME(),'.',-1),PICK(MATCH($(Gqvc.Config.v.LogMode),1,2,3),'log','qvd','log')));
+	LET Gqvc.Log.v.LogFileName =  TEXT(REPLACE(DOCUMENTNAME(),SUBFIELD(DOCUMENTNAME(),'.',-1),PICK(MATCH($(Gqvc.Config.v.LogMode),1,2,3),'log','log.qvd','log')));
 	LET Gqvc.Log.v.LogExists = IF(FILETIME('$(Gqvc.Log.v.LogFilePath)' & '$(Gqvc.Log.v.LogFileName)')>0,-1,0);
 	//IF(FILETIME(REPLACE($(Gqvc.Macro.v.DefaultIfEmpty('$(DirectoryPath)',DocumentPath())),DOCUMENTNAME(),'')&'$(Gqvc.Log.v.LogFileName)') > 0,-1,0); 
 	
 	IF MATCH(Gqvc.Config.v.LogMode,1,2)>0 THEN
-		LET Gqvc.Log.v.FileFormat = PICK(MATCH(Gqvc.Config.v.LogMode,1,2),'(txt, codepage is 1252, no labels, delimiter is ' & CHR(39) & '\t' & CHR(39) &', msq)','(qvd)');
-		LET Gqvc.Log.v.Fields = PICK(MATCH(Gqvc.Config.v.LogMode,1,2),'@1 as Gqvc.LogTimestamp,@2 as Gqvc.LogLevel,@3 as Gqvc.User,@4 as Gqvc.LogMessage','Gqvc.LogTimestamp,Gqvc.LogLevel,Gqvc.User,Gqvc.LogMessage');	
+		LET Gqvc.Log.v.FileFormat = PICK(MATCH(Gqvc.Config.v.LogMode,1,2),'(txt, utf8, embedded labels, delimiter is ' & CHR(39) & '\t' & CHR(39) &', msq)','(qvd)');
+//		LET Gqvc.Log.v.Fields = PICK(MATCH(Gqvc.Config.v.LogMode,1,2),'@1 as Gqvc.LogTimestamp,@2 as Gqvc.LogLevel,@3 as Gqvc.User,@4 as Gqvc.LogMessage','Gqvc.LogTimestamp,Gqvc.LogLevel,Gqvc.User,Gqvc.LogMessage');	
+		// QlikView store to txt command does not have an option to exclude headers. Hence, the workaround is to store and read header
+		LET Gqvc.Log.v.Fields = 'Gqvc.LogTimestamp,Gqvc.LogLevel,Gqvc.User,Gqvc.LogMessage';	
 		
 		IF $(Gqvc.Macro.v.TableExists('Gqvc.Logs'))=-1 AND Gqvc.Log.v.LogExists=-1 THEN // If in memory tables doesn't exists but file exists then load in memory
 			[Gqvc.Logs]:
@@ -692,6 +698,7 @@ SUB Gqvc.LogEvent(LogMessage,LogLevel,DirectoryPath)
 		LET Gqvc.Log.v.LogMessage = TIMESTAMP(NOW()) & '$(Gqvc.Log.v.Delimiter)' & '$(Gqvc.Log.v.LogLevel)' & '$(Gqvc.Log.v.Delimiter)' & OSUser() & '$(Gqvc.Log.v.Delimiter)' & '$(LogMessage)'; 
 		LET Gqvc.Log.v.NewLoadText = TIMESTAMP(NOW()) & '$(Gqvc.Log.v.Delimiter)' & 'Information' & '$(Gqvc.Log.v.Delimiter)' & OSUser() & '$(Gqvc.Log.v.Delimiter)' & '===== New Load ====='; 
 	
+		LET Gqvc.Log.v.LogHeader = 'Gqvc.LogTimestamp' & '$(Gqvc.Log.v.Delimiter)' & 'Gqvc.LogLevel' & '$(Gqvc.Log.v.Delimiter)' & 'Gqvc.User' & '$(Gqvc.Log.v.Delimiter)' & 'Gqvc.LogMessage';
 	
 		TRACE Gqvc.LogEvent(LogMessage:[$(LogMessage)], LogLevel:[$(Gqvc.Log.v.LogLevel)]); 
 		IF Gqvc.Log.v.LogExists = -1 THEN 
@@ -701,7 +708,10 @@ SUB Gqvc.LogEvent(LogMessage,LogLevel,DirectoryPath)
 			END IF 
 			EXECUTE CMD /C ECHO $(Gqvc.Log.v.LogMessage) $(Gqvc.Log.v.DoubleRedirection) "$(Gqvc.Log.v.LogFileName)";		 
 		ELSE 
-				EXECUTE CMD /C ECHO $(Gqvc.Log.v.NewLoadText) $(Gqvc.Log.v.SingleRedirection) "$(Gqvc.Log.v.LogFileName)";					 
+				//EXECUTE CMD /C ECHO $(Gqvc.Log.v.NewLoadText) $(Gqvc.Log.v.SingleRedirection) "$(Gqvc.Log.v.LogFileName)";
+				// BELOW TWO STATEMENTS ARE TO ENSURE COMPATIBILITY ON USING "STORE" COMMAND TO GENERATE LOG
+				EXECUTE CMD /C ECHO $(Gqvc.Log.v.LogHeader) $(Gqvc.Log.v.SingleRedirection) "$(Gqvc.Log.v.LogFileName)";
+				EXECUTE CMD /C ECHO $(Gqvc.Log.v.NewLoadText) $(Gqvc.Log.v.DoubleRedirection) "$(Gqvc.Log.v.LogFileName)";					 
 				SET Gqvc.Log.v.NewRun = 0; 
 				EXECUTE CMD /C ECHO $(Gqvc.Log.v.LogMessage) $(Gqvc.Log.v.DoubleRedirection) "$(Gqvc.Log.v.LogFileName)"; 
 		END IF 
@@ -719,7 +729,44 @@ SUB Gqvc.LogEvent(LogMessage,LogLevel,DirectoryPath)
 	SET Gqvc.Log.v.LogExists =; 
 	SET Gqvc.Log.v.Fields =;
 	SET Gqvc.Log.v.Concat =;
+	SET Gqvc.Log.v.LogHeader =;
 END SUB 
+// ****************************** End Sub ****************************** 
+
+// ****************************** Start Sub ****************************** 
+/* 
+Helper functions for easy user call to log event.
+
+@param 1 String. Log message 
+@param 2 String, Optional. Store path for log file, if different from current directory. By default, log is stored in same directory as the QV doc.
+@syntax CALL Gqvc.LogError('LogMessage',['DirectoryPath']); 
+*/
+SUB Gqvc.LogError(LogMessage,DirectoryPath)
+	LET LogMessage = $(Gqvc.Macro.v.DefaultIfEmpty('$(LogMessage)','Gqvc.LogError invoked with no log message'));
+	LET DirectoryPath = $(Gqvc.Macro.v.DefaultIfEmpty('$(DirectoryPath)',''));
+	CALL Gqvc.LogEvent(LogMessage,'E',DirectoryPath)
+	// Cleanup
+	SET LogMessage=;
+	SET DirectoryPath=;
+END SUB
+
+SUB Gqvc.LogWarning(LogMessage,DirectoryPath)
+	LET LogMessage = $(Gqvc.Macro.v.DefaultIfEmpty('$(LogMessage)','Gqvc.LogWarning invoked with no log message'));
+	LET DirectoryPath = $(Gqvc.Macro.v.DefaultIfEmpty('$(DirectoryPath)',''));
+	CALL Gqvc.LogEvent(LogMessage,'W',DirectoryPath)
+	// Cleanup
+	SET LogMessage=;
+	SET DirectoryPath=;
+END SUB
+
+SUB Gqvc.LogInformation(LogMessage,DirectoryPath)
+	LET LogMessage = $(Gqvc.Macro.v.DefaultIfEmpty('$(LogMessage)','Gqvc.LogInformation invoked with no log message'));
+	LET DirectoryPath = $(Gqvc.Macro.v.DefaultIfEmpty('$(DirectoryPath)',''));
+	CALL Gqvc.LogEvent(LogMessage,'I',DirectoryPath)
+	// Cleanup
+	SET LogMessage=;
+	SET DirectoryPath=;
+END SUB
 // ****************************** End Sub ****************************** 
 ///$tab Calendar Management 
 // Calendar Management - Functions for creating and maintaining generic calendars 
@@ -839,7 +886,6 @@ Retrieves the current timestamp from the DB.
 	 
 	LET ReturnDBTimestamp = TIMESTAMP(FieldValue('CurrentTimestampFromDB',1)); 
 
-
 	TRACE Gqvc.GetTimestampFromSqlDB:[$(ReturnDBTimestamp)]; 
 	CALL Gqvc.DropTable('TempTimestampFromDB'); 
 END SUB 
@@ -858,7 +904,6 @@ Retrieves the current timestamp from the DB.
 	 
 	LET ReturnDBTimestamp = TIMESTAMP(FieldValue('CurrentTimestampFromDB',1)); 
 
-
 	TRACE Gqvc.GetTimestampFromOracleDB:[$(ReturnDBTimestamp)]; 
 	CALL Gqvc.DropTable('TempTimestampFromDB'); 
 END SUB 
@@ -876,8 +921,12 @@ SUB Gqvc.Cleanup
 	CALL Gqvc.CleanupLogs
 	CALL Gqvc.CleanupReservedTables 
 	CALL Gqvc.CleanupVariables 
-	CALL Gqvc.CleanupMacros
-	CALL Gqvc.CleanupReservedVariables	 
+	IF MATCH($(Gqvc.Config.v.CleanupVariables),1,2) > 0 THEN // Delete macros if config allows
+		CALL Gqvc.CleanupMacros
+	END IF
+	IF MATCH($(Gqvc.Config.v.CleanupVariables),2) > 0 THEN // Delete configuration variables if config allows
+		CALL Gqvc.CleanupReservedVariables
+	END IF	 
 END SUB 
 // ****************************** End Sub ****************************** 
 
@@ -901,12 +950,14 @@ SUB Gqvc.CleanupVariables
 	LET ReturnDBTimestamp =;
 	
 	// Recursive routines
+	LET Gqvc.Rcrv.v.DirectoryPath =;
 	LET Gqvc.Rcrv.v.Mask =;
 	LET Gqvc.Rcrv.v.IncludeSubFolder =;
 	LET Gqvc.Rcrv.v.LoopBackParm =;
 	LET Gqvc.Rcrv.v.ParmOverride =;
 	LET Gqvc.Rcrv.v.LoopBack =;
 	LET Gqvc.Rcrv.v.Callback =;
+	LET Gqvc.Rcrv.v.Counter =;
 	
 	LET DirectoryPath =;
 	LET IncludeSubfolder =;
@@ -964,7 +1015,7 @@ SUB Gqvc.CleanupReservedTables
 	[Gqvc.CleanupReservedTables]:
 	LOAD CleanupTables RESIDENT	Gqvc.CleanupTables WHERE $(Gqvc.Cleanup.v.Mode) = 1;
 	
-	SET Gqvc.Cleanup.v.Reserved = 1;
+	SET Gqvc.Cleanup.v.Reserved = 1; // Enable deletion of reserved tables
 	IF NOOFROWS('Gqvc.CleanupReservedTables') > 0 THEN
 		FOR i=0 TO NOOFROWS('Gqvc.CleanupReservedTables') - 1
 			LET Gqvc.Cleanup.v.TableName = PEEK('CleanupTables',$(i),'Gqvc.CleanupReservedTables');
