@@ -1,8 +1,8 @@
-﻿///$tab Info 
+///$tab Info 
 // ***************	Generic Qlikview Components Library	*************** 
 // ***************	Author: Syed Maqsood	*************** 
 // ***************	First version Date: 19/09/2014	*************** 
-// ***************	Last modified Date: 05/08/2015	*************** 
+// ***************	Last modified Date: 13/08/2015	*************** 
 ///$tab Change Log 
 /* *********************** Change Log *********************** 
 Versioning convention 
@@ -13,9 +13,9 @@ X.Y.Z ==>	X --> New functionality: when a new tab is created which enhances Gqvc
 
 [Gqvc.Version]:
 LOAD
-	DATE#(SUBFIELD([Date||Version||Change Description],'||',1),'DD/MM/YYYY')	AS Gqvc.Date,
+	DATE#(SUBFIELD([Date||Version||Change Description],'||',1),'DD/MM/YYYY')	AS	Gqvc.Date,
 	TRIM(SUBFIELD([Date||Version||Change Description],'||',2))					AS	Gqvc.Version,
-	TEXT(TRIM(SUBFIELD([Date||Version||Change Description],'||',3)))			AS	[Gqvc.Description]
+	TEXT(TRIM(SUBFIELD([Date||Version||Change Description],'||',3)))			AS	Gqvc.Description
 ;
 LOAD * INLINE [
 Date||Version||Change Description 
@@ -44,6 +44,8 @@ Date||Version||Change Description
 31/07/2015||4.2.1||GitHub issue #1; Fixed infinite loop bug with Gqvc.RecursiveDirectory, when Gqvc.LogEvent or its helper functions were used as Loop parameters. 
 05/08/2015||4.2.2||GitHub issue #2; Fixed bug with Gqvc.LogEvent when using "STORE" command to write to text file.
 06/08/2015||4.2.3||GitHub issue #3; Nested calls to Gqvc.ResolvePath by different routines was over-writing v.ResolvedDirectoryPath. 
+13/08/2015||4.2.4||Added Gqvc.CreateTable and Gqvc.CloneDirectory routines
+13/08/2015||4.2.4||Storing Gqvc reserved tables to QVD is now possible. User should explicitly pass name of the QVD when storing reserved tables.
 ];
 
 LET Gqvc.ChangeLog.v.Version = PEEK('Gqvc.Version',-1,'Gqvc.Version'); 
@@ -56,7 +58,7 @@ TRACE Gqvc Version: $(Gqvc.ChangeLog.v.Version);
 1 -> Creates files/folders; Requires Settings -> "Can Execute External Programs" 
 2 -> Can create and delete files/folders; Requires Settings -> "Can Execute External Programs" 
 */
-SET Gqvc.Config.v.SystemAccessMode = 2;
+SET Gqvc.Config.v.SystemAccessMode = 0;
 TRACE Gqvc.Config.v.SystemAccessMode = $(Gqvc.Config.v.SystemAccessMode);
 
 /* Gqvc.Config.v.LogMode settings
@@ -65,7 +67,7 @@ TRACE Gqvc.Config.v.SystemAccessMode = $(Gqvc.Config.v.SystemAccessMode);
 2 -> Log file stored as QVD. Log will not be created until script has successfully ran and Gqvc.Cleanup called at the end of script.
 3 -> Can create logs, as flat file, at run time; Requires Settings -> "Can Execute External Programs" 
 */ 
-SET Gqvc.Config.v.LogMode = 1;
+SET Gqvc.Config.v.LogMode = 2;
 TRACE Gqvc.Config.v.LogMode = $(Gqvc.Config.v.LogMode);
 
 /* Gqvc.Config.v.LogMode settings for Gqvc.Cleanup
@@ -140,12 +142,36 @@ SUB Gqvc.DropTable(TableName)
 	TRACE Gqvc.DropTable(TableName: [$(TableName)]); 
 	 
 	IF $(Gqvc.Macro.v.TableExists('$(TableName)')) = -1 THEN 
-	    TRACE Table: [$(TableName)], does not exist. Table cannot be dropped.; 
+	    TRACE Table: [$(TableName)], does not exists. Table cannot be dropped.; 
 	ELSEIF $(Gqvc.Macro.v.IsReserved('$(TableName)')) > 0 AND Len('$(Gqvc.Cleanup.v.Reserved)')=0  THEN 
 		TRACE Table: [$(TableName)], is reserved. Table will not be dropped.;      
 	ELSE 
 	    DROP TABLE [$(TableName)]; 
 	    TRACE Table dropped. [$(TableName)]; 
+	END IF 
+END SUB 
+// ****************************** End Sub ****************************** 
+
+// ****************************** Start Sub ****************************** 
+/* 
+Create an in memory table. 
+@param 1 String. TableName: Name of the table to be dropped. 
+@syntax CALL Gqvc.CreateTable('TableName'); 
+*/ 
+SUB Gqvc.CreateTable(TableName) 
+	TRACE Gqvc.CreateTable(TableName: [$(TableName)]); 
+	 
+	IF $(Gqvc.Macro.v.TableExists('$(TableName)')) = 0 THEN 
+	    TRACE Table: [$(TableName)], already exists. Table cannot be created.; 
+	ELSE
+		QUALIFY *; 
+	    [$(TableName)]:
+	    LOAD * INLINE [
+	    DummyField
+	    ];
+	    UNQUALIFY *;
+	    
+	    TRACE Table created. [$(TableName)]; 
 	END IF 
 END SUB 
 // ****************************** End Sub ****************************** 
@@ -245,7 +271,7 @@ SUB Gqvc.StoreDataQvd(TableName, QvdPath, QvdName)
 
 	IF $(Gqvc.Macro.v.TableExists('$(TableName)')) = -1 THEN 
 	    TRACE Table: [$(TableName)], does not exist. Table cannot be stored.;		 
-	ELSEIF $(Gqvc.Macro.v.IsReserved('$(TableName)')) > 0 THEN 
+	ELSEIF $(Gqvc.Macro.v.IsReserved('$(TableName)')) > 0 AND LEN(TRIM('$(QvdName)')) = 0  THEN // Allows storing reserved tables by user by different names
 		TRACE Table: [$(TableName)], is a reserved table. Table will not be stored.;		 
 	ELSE 
 		LET Gqvc.Qvd.v.QvdFileName = $(Gqvc.Macro.v.DefaultIfEmpty('$(QvdName)','$(TableName)'));	//IF(LEN(TRIM('$(QvdName)')) > 0,'$(QvdName)','$(TableName)'); 
@@ -323,8 +349,6 @@ END SUB
 // ****************************** End Sub ****************************** 
 
 
-
-
 // ****************************** Start Sub ****************************** 
 /* 
 Removes all *.qvd files from a directory (and sub directories if parameter is IncludeSubDirectories is set to True() or a none zero value). 
@@ -366,8 +390,6 @@ SUB Gqvc.DeleteAllQvdFilesFromDirectory(DirectoryPath, IncludeSubDirectories)
 	LET Gqvc.Qvd.v.DeleteQvdFilesPath =;  
 END SUB 
 // ****************************** End Sub ****************************** 
-
-
 
 
 // ****************************** Start Sub ****************************** 
@@ -478,7 +500,10 @@ SUB Gqvc.CreateDirectory(DirectoryPath)
 		IF IsNull(FileTime('$(Gqvc.Dir.v.CreateDirPath)\*.*'))  THEN 
 			TRACE Error creating directory: $(Gqvc.Dir.v.CreateDirPath); 
 			CALL Gqvc.LogEvent('Error creating directory: $(Gqvc.Dir.v.CreateDirPath)','E'); 
-			CALL Gqvc.RaiseFatalError; 
+			CALL Gqvc.RaiseFatalError;
+		ELSE
+			TRACE Gqvc.CreateDirectory: Directory [$(Gqvc.Dir.v.CreateDirPath)] created;
+			CALL Gqvc.LogInformation('Gqvc.CreateDirectory: Directory [$(Gqvc.Dir.v.CreateDirPath)] created'); 
 	    END IF     
 	END IF
 	
@@ -507,10 +532,10 @@ SUB Gqvc.ResolvePath(ResolveDirectoryPath)
 	END IF			 
 
 
-	IF FileTime('$(ResolveDirectoryPath)') > 0 THEN 
-		LET v.ResolvedDirectoryPath = '$(ResolveDirectoryPath)'; 
+//	IF FileTime('$(ResolveDirectoryPath)') > 0 THEN 
+//		LET v.ResolvedDirectoryPath = '$(ResolveDirectoryPath)'; 
 	 
-	ELSEIF SubStringCount('$(ResolveDirectoryPath)','.\') > 0 THEN // for relaive path 
+	IF SubStringCount('$(ResolveDirectoryPath)','.\') > 0 THEN // for relaive path 
 		IF SubStringCount('\' & '$(ResolveDirectoryPath)' & '\','\.\\') > 0 THEN 
 			LET v.ResolvedDirectoryPath = '$(v.Path)'; 
 		ELSEIF 	SubStringCount('\' & '$(ResolveDirectoryPath)' & '\','\.\') > 0 THEN 
@@ -529,13 +554,17 @@ SUB Gqvc.ResolvePath(ResolveDirectoryPath)
 			LET v.ResolvedDirectoryPath = '$(ResolveDirectoryPath)'; 
 		END IF 
 		 
+	ELSEIF FileTime('$(ResolveDirectoryPath)') > 0 THEN 
+		LET v.ResolvedDirectoryPath = '$(ResolveDirectoryPath)'; 
+	
 	ELSEIF v.NonExistingDirAllowed=-1 THEN
 		LET v.ResolvedDirectoryPathTemp = '$(ResolveDirectoryPath)'; // temporary place holder
 		SET v.NonExistingDirAllowed =; // Reset
 		TRACE Gqvc.ResolvePath: Non-existing directory [$(ResolveDirectoryPath)] allowed by Gqvc.CreateDirectory override;
-		CALL Gqvc.LogInformation('Gqvc.ResolvePath: Non-existing directory [$(ResolveDirectoryPath)] allowed by Gqvc.CreateDirectory override');
+		//CALL Gqvc.LogInformation('Gqvc.ResolvePath: Non-existing directory [$(ResolveDirectoryPath)] allowed by Gqvc.CreateDirectory override');
 		LET v.ResolvedDirectoryPath = '$(v.ResolvedDirectoryPathTemp)';
 		LET v.ResolvedDirectoryPathTemp =; // Cleanup temp variable
+	
 	ELSE 
 		TRACE Gqvc.ResolvePath: Cannot resolve directory [$(ResolveDirectoryPath)]; 
 		CALL Gqvc.LogError('Gqvc.ResolvePath: Cannot resolve directory [$(ResolveDirectoryPath)]');  
@@ -560,7 +589,8 @@ Recurse through directory path
 @param 5 Numeric. ParmOverride: Overrides, how and what argument you want to pass to Loop back call
 	0 -> To pass only directory path as an argument to calling sub routine or Loop back
 	1 -> To pass only LoopBackParm as an argument to calling sub routine or Loop back
-	2 -> To pass both directory path and LoopBackParm as an argument to calling sub routine or Loop back
+	2 -> To pass both directory path and LoopBackParm as arguments to calling sub routine or Loop back
+	3 -> To pass both directory path and LoopBackParm, in reverse order, as arguments to calling sub routine or Loop back
 	By default -> If Loopback parameter is present, send both directory and LoopBackParm othewise send only Directory
 @syntax CALL Gqvc.RecursiveDirectory('DirectoryPath',IncludeSubfolder,'LoopBack','LoopBackParm',ParmOverride]); 
 Example: CALL Gqvc.RecursiveDirectory('.\',1,'Gqvc.LogEvent','Repeats log message for each directory scanned',1); 
@@ -587,7 +617,8 @@ SUB Gqvc.RecursiveDirectory(DirectoryPath,IncludeSubfolder,LoopBack,LoopBackParm
 	LET Gqvc.Rcrv.v.Callback = IF(LEN(TRIM('$(Gqvc.Rcrv.v.LoopBack)'))>0,'CALL $(Gqvc.Rcrv.v.LoopBack)' & CHR(40) & CHR(39) & 
 							IF(($(Gqvc.Rcrv.v.ParmOverride)=-1 AND LEN(TRIM('$(Gqvc.Rcrv.v.LoopBackParm)'))=0) OR $(Gqvc.Rcrv.v.ParmOverride)=0,'$(Gqvc.Rcrv.v.DirectoryPath)',
 								IF(($(Gqvc.Rcrv.v.ParmOverride)=-1 AND LEN(TRIM('$(Gqvc.Rcrv.v.LoopBackParm)'))<>0) OR $(Gqvc.Rcrv.v.ParmOverride)=2,'$(Gqvc.Rcrv.v.DirectoryPath)' & CHR(39) & CHR(44) & CHR(39) & '$(Gqvc.Rcrv.v.LoopBackParm)',
-									IF($(Gqvc.Rcrv.v.ParmOverride)=1, '$(Gqvc.Rcrv.v.LoopBackParm)'))) & CHR(39) & CHR(41),'');
+									IF($(Gqvc.Rcrv.v.ParmOverride)=3, '$(Gqvc.Rcrv.v.LoopBackParm)' & CHR(39) & CHR(44) & CHR(39) & '$(Gqvc.Rcrv.v.DirectoryPath)',
+										IF($(Gqvc.Rcrv.v.ParmOverride)=1, '$(Gqvc.Rcrv.v.LoopBackParm)')))) & CHR(39) & CHR(41),'');
 	TRACE Directory is [$(Gqvc.Rcrv.v.DirectoryPath)], Callback request [$(Gqvc.Rcrv.v.Callback)];
 	$(Gqvc.Rcrv.v.Callback); // Call loopback routine
 	
@@ -603,7 +634,9 @@ SUB Gqvc.RecursiveDirectory(DirectoryPath,IncludeSubfolder,LoopBack,LoopBackParm
 	SET IncludeSubfolder =;
 	SET ParmOverride =;	
 END SUB 
+// ****************************** End Sub ****************************** 
 
+// ****************************** Start Sub ****************************** 
 /* 
 Scan for files in a directory
 
@@ -620,6 +653,84 @@ SUB Gqvc.RecursiveFile(DirectoryPath, FileExtension)
 			FileTime( '$(File)' ) as Gqvc.FileTime
 		AUTOGENERATE 1;
 	NEXT File	
+END SUB
+// ****************************** End Sub ****************************** 
+
+
+// ****************************** Start Sub ****************************** 
+/* 
+Scan for files in a directory
+
+@param 1 String. SourceDirectoryPath: The path of the directory to be replicated. 
+@param 2 String. TargetDirectoryPath: Path of the target directory.
+@syntax CALL Gqvc.CloneDirectory('C:\QV\Dev','D:\QV\UAT'); 
+*/ 
+SUB Gqvc.CloneDirectory(SourceDirectoryPath, TargetDirectoryPath)
+	TRACE Gqvc.CloneDirectory(SourceDirectoryPath:[$(SourceDirectoryPath)], TargetDirectoryPath:[$(TargetDirectoryPath)]); 
+	
+	IF MIXMATCH($(Gqvc.Config.v.SystemAccessMode),1,2) > 0 THEN // Check for permissions
+	
+		CALL Gqvc.ResolvePath('$(SourceDirectoryPath)');
+		LET Gqvc.Dir.v.Clone.SrcDir = '$(v.ResolvedDirectoryPath)';
+		
+		SET v.NonExistingDirAllowed = -1; // To allow Gqvc.ResolvePath to return non-existing directory path
+		CALL Gqvc.ResolvePath('$(TargetDirectoryPath)');
+		LET Gqvc.Dir.v.Clone.TrgDir = '$(v.ResolvedDirectoryPath)';
+		SET v.NonExistingDirAllowed =; // Reset
+		
+		TRACE Resolved source directory [$(Gqvc.Dir.v.Clone.SrcDir)], target directory [$(Gqvc.Dir.v.Clone.TrgDir)];
+		
+		IF $(Gqvc.Macro.v.TableExists('Gqvc.RecursiveFile')) = 0 THEN // Ensure Gqvc.RecursiveFile has not been used before
+			TRACE Gqvc.CloneDirectory: Table [Gqvc.RecursiveFile] is not empty. CloneDirectory cannot proceed.;
+			CALL Gqvc.LogError('Gqvc.CloneDirectory: Table [Gqvc.RecursiveFile] is not empty. CloneDirectory cannot proceed.');   
+		
+		ELSE	
+			CALL Gqvc.RecursiveDirectory('$(Gqvc.Dir.v.Clone.SrcDir)',1,'Gqvc.RecursiveFile','*'); // read all directories
+			
+			// create new directory path using old structure
+			[_Gqvc.ReplicateDir]:
+			LOAD DISTINCT *;
+			LOAD 
+				LEFT(Gqvc.FileName,INDEX(Gqvc.FileName,'\',-1)-1) AS SourceDir,
+				REPLACE(LEFT(Gqvc.FileName,INDEX(Gqvc.FileName,'\',-1)-1),'$(Gqvc.Dir.v.Clone.SrcDir)','$(Gqvc.Dir.v.Clone.TrgDir)') AS TargetDir
+			RESIDENT 
+				Gqvc.ScannedFileList;
+			LET Gqvc.Dir.v.Clone.NoOfScannedDir = NOOFROWS('_Gqvc.ReplicateDir');
+	
+			CALL Gqvc.LogInformation('Gqvc.CloneDirectory: Scanned [$(Gqvc.Dir.v.Clone.NoOfScannedDir)] directories in source [$(Gqvc.Dir.v.Clone.SrcDir)]');
+			
+			IF $(Gqvc.Dir.v.Clone.NoOfScannedDir) > 0 THEN  // Ensure atleast one sub-directory exists
+				LET Gqvc.Dir.v.Clone.Counter = 0;
+				// create new directory
+				FOR i=0 to NOOFROWS('_Gqvc.ReplicateDir') - 1
+					LET Gqvc.Dir.v.Clone.ReproduceDir = PEEK('TargetDir',i,'_Gqvc.ReplicateDir');
+					CALL Gqvc.CreateDirectory('$(Gqvc.Dir.v.Clone.ReproduceDir)');
+					LET Gqvc.Dir.v.Clone.Counter = $(Gqvc.Dir.v.Clone.Counter) + 1;
+					//TRACE Gqvc.CloneDirectory: New directory [$(Gqvc.Dir.v.Clone.ReproduceDir)] created;
+					//CALL Gqvc.LogInformation('Gqvc.CloneDirectory: New directory [$(Gqvc.Dir.v.Clone.ReproduceDir)] created');
+				NEXT
+				TRACE Gqvc.CloneDirectory: Directories cloned or attempted to clone [$(Gqvc.Dir.v.Clone.Counter)];
+				CALL Gqvc.LogInformation('Gqvc.CloneDirectory: Directories cloned or attempted to clone [$(Gqvc.Dir.v.Clone.Counter)]');
+			ELSE
+				TRACE Gqvc.CloneDirectory: Source directory is empty. No directories were cloned;
+				CALL Gqvc.LogInformation('Gqvc.CloneDirectory: Source directory is empty. No directories were cloned');				
+			END IF
+		END IF
+	ELSE
+		TRACE Insufficient privilege. Directory [$(SourceDirectoryPath)] cannot be cloned; 
+		CALL Gqvc.LogError('Insufficient privilege. Directory [$(SourceDirectoryPath)] cannot be cloned');   
+	END IF
+	
+	// Cleanup
+	SET Gqvc.Cleanup.v.Reserved = -1;
+	CALL Gqvc.DropTable('_Gqvc.ReplicateDir');
+	SET Gqvc.Cleanup.v.Reserved =;
+	LET Gqvc.Dir.v.Clone.SrcDir =;
+	LET Gqvc.Dir.v.Clone.TrgDir =;
+	LET Gqvc.Dir.v.Clone.NoOfScannedDir =;
+	LET Gqvc.Dir.v.Clone.ReproduceDir =;
+	SET i=;
+	SET Gqvc.Dir.v.Clone.Counter=;
 END SUB
 // ****************************** End Sub ****************************** 
 ///$tab Error Management 
@@ -691,7 +802,7 @@ SUB Gqvc.LogEvent(LogMessage,LogLevel,DirectoryPath)
 			$(Gqvc.Log.v.Concat)
 			LOAD
 				TIMESTAMP(NOW()) 			AS	Gqvc.LogTimestamp,
-				'$(Gqvc.Log.v.LogLevel)'	AS	Gqvc.LogLevel,
+				'Information'				AS	Gqvc.LogLevel,
 				OSUser()					AS	Gqvc.User,
 				'===== New Load ====='		AS	Gqvc.LogMessage
 			AUTOGENERATE 1;
@@ -987,7 +1098,14 @@ SUB Gqvc.CleanupVariables
 	LET Dir =;
 	LET FileExtension =;
 	LET File =;
-	 	
+	
+	// Clone dir
+	LET Gqvc.Dir.v.Clone.SrcDir =;
+	LET Gqvc.Dir.v.Clone.TrgDir =;
+	LET Gqvc.Dir.v.Clone.NoOfScannedDir =;
+	LET Gqvc.Dir.v.Clone.ReproduceDir =;
+	SET i=;
+	SET Gqvc.Dir.v.Clone.Counter=;
 END SUB 
 // ****************************** End Sub ****************************** 
 
@@ -1054,6 +1172,11 @@ SUB Gqvc.CleanupReservedTables
 END SUB 
 // ****************************** End Sub ****************************** 
 
+// ****************************** Start Sub ****************************** 
+/* 
+Cleanup Logs 
+@syntax CALL Gqvc.CleanupLogs; 
+*/ 
 SUB Gqvc.CleanupLogs
 	IF $(Gqvc.Macro.v.TableExists('Gqvc.Logs')) = 0 THEN 
 		STORE [Gqvc.Logs] INTO [$(Gqvc.Log.v.LogFilePath)$(Gqvc.Log.v.LogFileName)] $(Gqvc.Log.v.FileFormat);
@@ -1066,3 +1189,4 @@ SUB Gqvc.CleanupLogs
 	SET Gqvc.Log.v.FileFormat = ;
 	
 END SUB
+// ****************************** End Sub ****************************** 
