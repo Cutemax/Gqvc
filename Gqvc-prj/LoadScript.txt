@@ -2,7 +2,7 @@
 // ***************	Generic Qlikview Components Library	*************** 
 // ***************	Author: Syed Maqsood	*************** 
 // ***************	First version Date: 19/09/2014	*************** 
-// ***************	Last modified Date: 13/08/2015	*************** 
+// ***************	Last modified Date: 28/08/2015	*************** 
 ///$tab Change Log 
 /* *********************** Change Log *********************** 
 Versioning convention 
@@ -46,6 +46,7 @@ Date||Version||Change Description
 06/08/2015||4.2.3||GitHub issue #3; Nested calls to Gqvc.ResolvePath by different routines was over-writing v.ResolvedDirectoryPath. 
 13/08/2015||4.2.4||Added Gqvc.CreateTable and Gqvc.CloneDirectory routines
 13/08/2015||4.2.4||Storing Gqvc reserved tables to QVD is now possible. User should explicitly pass name of the QVD when storing reserved tables.
+28/08/2015||4.2.5||GitHub issue #4; Minor fix to Gqvc.Logs. Gqvc.Logs table was sometimes accidently concatenated with other user tables.
 ];
 
 LET Gqvc.ChangeLog.v.Version = PEEK('Gqvc.Version',-1,'Gqvc.Version'); 
@@ -795,7 +796,7 @@ SUB Gqvc.LogEvent(LogMessage,LogLevel,DirectoryPath)
 			FROM [$(Gqvc.Log.v.LogFilePath)$(Gqvc.Log.v.LogFileName)] $(Gqvc.Log.v.FileFormat);			
 		END IF
 		
-		LET Gqvc.Log.v.Concat = IF($(Gqvc.Macro.v.TableExists('Gqvc.Logs'))=0,'CONCATENATE',''); // required to identify merge to existing table or is it a new log
+		LET Gqvc.Log.v.Concat = IF($(Gqvc.Macro.v.TableExists('Gqvc.Logs'))=0,'CONCATENATE ([Gqvc.Logs])',''); // required to identify merge to existing table or is it a new log
 		
 		IF Len('$(Gqvc.Log.v.NewRun)')=0 THEN
 			[Gqvc.Logs]:
