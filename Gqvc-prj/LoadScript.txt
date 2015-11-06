@@ -2,7 +2,7 @@
 // ***************	Generic Qlikview Components Library	*************** 
 // ***************	Author: Syed Maqsood	*************** 
 // ***************	First version Date: 19/09/2014	*************** 
-// ***************	Last modified Date: 28/08/2015	*************** 
+// ***************	Last modified Date: 04/11/2015	*************** 
 ///$tab Change Log 
 /* *********************** Change Log *********************** 
 Versioning convention 
@@ -47,9 +47,15 @@ Date||Version||Change Description
 13/08/2015||4.2.4||Added Gqvc.CreateTable and Gqvc.CloneDirectory routines
 13/08/2015||4.2.4||Storing Gqvc reserved tables to QVD is now possible. User should explicitly pass name of the QVD when storing reserved tables.
 28/08/2015||4.2.5||GitHub issue #4; Minor fix to Gqvc.Logs. Gqvc.Logs table was sometimes accidently concatenated with other user tables.
+22/10/2015||4.2.6||GitHub issue #5; Fixed concatenation of calendar tables in Gqvc.CreateCalendar & Gqvc.CreateCalendarFromField 
+30/10/2015||4.2.6||Added two new macro variables, Gqvc.Macro.v.GetSelectedField & Gqvc.Macro.v.SelectedField, to list data of selected field in a list box.
+04/11/2015||4.2.6||Calls to Gqvc.CreateDirectory will now result in script failure, if it does not have permissions to create directory and a call to store data in non-existent directory is made
 ];
 
 LET Gqvc.ChangeLog.v.Version = PEEK('Gqvc.Version',-1,'Gqvc.Version'); 
+
+TRACE 
+************************** Gqvc default settings **************************;
 TRACE Gqvc Version: $(Gqvc.ChangeLog.v.Version); 
 ///$tab Gqvc Configuration
 // *********************** Gqvc global configuration *********************** 
@@ -85,6 +91,9 @@ Gqvc.CleanupTables defines a matrix and mode to be deleted. It is a custimizable
 SET Gqvc.Config.v.CleanupTables = 5;
 TRACE Gqvc.Config.v.CleanupTables = $(Gqvc.Config.v.CleanupTables);
 
+TRACE ************************** End of Gqvc default settings **************************
+;
+
 [Gqvc.CleanupTables]:
 LOAD * INLINE [
     CleanupTables, Mode0, Mode1, Mode2, Mode3, Mode4, Mode5
@@ -93,6 +102,7 @@ LOAD * INLINE [
     Gqvc.ScannedFileList, 0, 0, 0, 1, 1, 1
 ];
 // *********************** Gqvc global configuration *********************** 
+
 ///$tab Script Macros 
 // Macros  
 // ****************************** Start Sub ****************************** 
@@ -106,9 +116,23 @@ SET Gqvc.Macro.v.CreateBitString = If(Len(Trim($2))=0, Repeat(0,$1-1) & 1, Repea
 SET Gqvc.Macro.v.DefaultIfEmpty = If(Len(Trim($1))= 0, $2, $1); // Returns second argument if first argument is empty 
 SET Gqvc.Macro.v.FieldExists = IF(Len(Trim($1))>0, IsNull(FieldValueCount($1)),-1); // Returns 0 if field exists else -1 
 SET Gqvc.Macro.v.TableExists = IF(Len(Trim($1))>0, IsNull(TableNumber($1)),-1); // Returns 0 if table exists else -1 
-SET Gqvc.Macro.v.FileExists = IF(Len(Trim($1))>0, IsNull(FileSize($1)),-1); 
-SET Gqvc.Macro.v.IsReserved = WildMatch($1,'Gqvc.*','_Gqvc.*'); // Returns integer > 0 if table/field name contains "Gqvc" exists else 0 
+SET Gqvc.Macro.v.FileExists = IF(Len(Trim($1))>0, IsNull(FileSize($1)),-1); // Returns 0 if file exists else -1 
+SET Gqvc.Macro.v.IsReserved = WildMatch($1,'Gqvc.*','_Gqvc.*'); // Returns integer > 0 if table/field name contains "Gqvc" else 0 
 SET Gqvc.Macro.v.CreateRandomName =  IF(Len(Trim($1))>0,$1 & '_','__Temp_') & Ceil(pow((Rand()+1)*10,Rand()+pi())); // Creates random name. Argument passed will be part of the name  
+
+/* 
+Standard variables required to build dynamic fields in list box. To be used in UI.
+Typically you could create three list boxes for dynamic data exploration. Replace '%' with the character you've used in "SET HidePrefix=" statement.
+	1. for table selection (optional)
+		List box expression (content inside double quotes): "=IF(LEFT($Table,1)<>'%' AND SUBFIELD($Table,'.',1)<>'Gqvc', $Table)"
+	2. for field selection
+		List box expression (content inside double quotes): "=IF(LEFT($Field,1)<>'%' AND SUBFIELD($Field,'.',1)<>'Gqvc', $Field)"
+	3. To display data in a field
+		List box expression (content inside double quotes): "=$(v.CMN.SelectedField)"
+		List box title (content inside double quotes): "='Field values (' & COUNT($(v.CMN.SelectedField)) & ')'"	
+*/ 
+LET Gqvc.Macro.v.GetSelectedField = '=' & CHR(39) & '[' & CHR(39) & CHR(38) & 'GETFIELDSELECTIONS(' & CHR(36) & 'Field,' & CHR(39) & CHR(39) & ',1)' & CHR(38) & CHR(39) & ']' & CHR(39);
+SET Gqvc.Macro.v.SelectedField = '=Gqvc.Macro.v.GetSelectedField';
 // ****************************** End Sub ****************************** 
 
 
@@ -493,7 +517,8 @@ SUB Gqvc.CreateDirectory(DirectoryPath)
 		TRACE Directory Exists $(Gqvc.Dir.v.CreateDirPath);
 	ELSEIF Gqvc.Config.v.SystemAccessMode = 0 THEN
 		TRACE Insufficient privilege. Directory [$(Gqvc.Dir.v.CreateDirPath)] cannot be created;
-		CALL Gqvc.LogEvent('Insufficient privilege. Directory [$(Gqvc.Dir.v.CreateDirPath)] cannot be created','E');   
+		CALL Gqvc.LogEvent('Insufficient privilege. Directory [$(Gqvc.Dir.v.CreateDirPath)] cannot be created','E'); 
+		CALL Gqvc.RaiseFatalError;		
 	ELSE 
 	    TRACE Creating Directory $(Gqvc.Dir.v.CreateDirPath); 
 	    EXECUTE cmd /C mkdir "$(Gqvc.Dir.v.CreateDirPath)";  
@@ -526,12 +551,10 @@ SUB Gqvc.ResolvePath(ResolveDirectoryPath)
 	TRACE Gqvc.ResolvePath(ResolveDirectoryPath:[$(ResolveDirectoryPath)]); 
 	LET v.Path = Replace(DocumentPath(),'\'&DocumentName(),''); 
 
-
 	// Remove any trailing '\' from the resolved directory path 
 	IF	WildMatch('|'&'$(ResolveDirectoryPath)'&'|','|.\|', '|..\|', '|.\*\|', '|..\*\|', '|\\*\|','|*\|') >= 3 THEN 
 		LET ResolveDirectoryPath = Left('$(ResolveDirectoryPath)',Len('$(ResolveDirectoryPath)')-1); 
 	END IF			 
-
 
 //	IF FileTime('$(ResolveDirectoryPath)') > 0 THEN 
 //		LET v.ResolvedDirectoryPath = '$(ResolveDirectoryPath)'; 
@@ -571,7 +594,6 @@ SUB Gqvc.ResolvePath(ResolveDirectoryPath)
 		CALL Gqvc.LogError('Gqvc.ResolvePath: Cannot resolve directory [$(ResolveDirectoryPath)]');  
 		CALL Gqvc.RaiseFatalError;	 
 	END IF 
-
 
 	// Cleanup.. 
 	SET v.Path = ; 
@@ -644,6 +666,7 @@ Scan for files in a directory
 @param 1 String. DirectoryPath: The path of the directory. 
 @param 2 String. FileExtension: File extension that needs to be scanned.
 @syntax CALL Gqvc.RecursiveFile('.\','xls'); 
+Note: Successful run of Gqvc.RecursiveFile, will create Gqvc.ScannedFileList table. This table can be dropped at the end of the script by a call to Gqvc.Cleanup.
 */ 
 SUB Gqvc.RecursiveFile(DirectoryPath, FileExtension)
 	FOR Each File IN FILELIST(DirectoryPath &'\*.' & FileExtension)
@@ -749,7 +772,7 @@ SUB Gqvc.RaiseFatalError
 	TRACE Fatal error raised!!; 
 	CALL Gqvc.LogEvent('Fatal error raised! Script execution will stop','E'); 
 	CALL Gqvc.Cleanup;
-	SET ErrorMode = 1; // To force erroring out, even if Error mode is set to 0 by the user. 
+	SET ErrorMode = 2; // To force erroring out, even if Error mode is set to 0 by the user. 
 	CALL FatalError; // Dummy sub to create script error 
 	EXIT Script; 
 END SUB 
@@ -925,7 +948,8 @@ SUB Gqvc.CreateCalendarFromField(FieldName,TableName,FieldPrefix)
 	    TRACE Date Field: [$(FieldName)], does not exist. Calendar table cannot be created;
 	    CALL Gqvc.LogEvent('Date Field: [$(FieldName)], does not exist. Calendar table cannot be created','E'); 		 
 	ELSE 
-		[$(TableName)]:	  
+		[$(TableName)]:
+		NOCONCATENATE
 		LOAD 
 			[_Date]					AS [$(FieldName)],		// Link on Field Name 
 			[_Date]					AS [%$(FieldName)],		// Link on %field name 
@@ -979,7 +1003,8 @@ SUB Gqvc.CreateCalendar(TableName,StartDate,EndDate,FieldPrefix)
 		TRACE Start date should be less than or equal to End date. Calendar Table: [$(TableName)], will not be created;
 		CALL Gqvc.LogEvent('Start date should be less than or equal to End date. Calendar Table: [$(TableName)], will not be created','E');	 
 	ELSE	 
-		[$(TableName)]:	  
+		[$(TableName)]:
+		NOCONCATENATE
 		LOAD 
 			[_Date]					AS [$(FieldPrefix)Date],		// Link on Field Name 
 			NUM([_Date])			AS [%$(FieldPrefix)Date],		// Link on %field name 
@@ -1124,6 +1149,8 @@ SUB Gqvc.CleanupMacros
 	LET Gqvc.Macro.v.FileExists =;
 	LET Gqvc.Macro.v.IsReserved =;
 	LET Gqvc.Macro.v.TableExists =;
+	LET Gqvc.Macro.v.GetSelectedField =;
+	LET Gqvc.Macro.v.SelectedField =;
 END SUB 
 // ****************************** End Sub ****************************** 
 
