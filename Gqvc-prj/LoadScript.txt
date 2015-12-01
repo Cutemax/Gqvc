@@ -2,7 +2,7 @@
 // ***************	Generic Qlikview Components Library	*************** 
 // ***************	Author: Syed Maqsood	*************** 
 // ***************	First version Date: 19/09/2014	*************** 
-// ***************	Last modified Date: 04/11/2015	*************** 
+// ***************	Last modified Date: 01/12/2015	*************** 
 ///$tab Change Log 
 /* *********************** Change Log *********************** 
 Versioning convention 
@@ -50,6 +50,7 @@ Date||Version||Change Description
 22/10/2015||4.2.6||GitHub issue #5; Fixed concatenation of calendar tables in Gqvc.CreateCalendar & Gqvc.CreateCalendarFromField 
 30/10/2015||4.2.6||Added two new macro variables, Gqvc.Macro.v.GetSelectedField & Gqvc.Macro.v.SelectedField, to list data of selected field in a list box.
 04/11/2015||4.2.6||Calls to Gqvc.CreateDirectory will now result in script failure, if it does not have permissions to create directory and a call to store data in non-existent directory is made
+01/12/2015||4.2.7||GitHub issue #6; Fixed bug; Gqvc.CloneDirectory will capture empty source directory error.
 ];
 
 LET Gqvc.ChangeLog.v.Version = PEEK('Gqvc.Version',-1,'Gqvc.Version'); 
@@ -683,7 +684,11 @@ END SUB
 
 // ****************************** Start Sub ****************************** 
 /* 
-Scan for files in a directory
+Creates empty directory structure based on source directory tree. 
+This routines is particularly helpful in mirgrating apps between environments. 
+Note: 
+	1. Directories that do not have any file in it will be excluded.
+	2. Root directory will not be a part of new structure created. Hence, if root directory is required, it has to be explicitly mentioned in the target directory path.
 
 @param 1 String. SourceDirectoryPath: The path of the directory to be replicated. 
 @param 2 String. TargetDirectoryPath: Path of the target directory.
@@ -711,33 +716,41 @@ SUB Gqvc.CloneDirectory(SourceDirectoryPath, TargetDirectoryPath)
 		ELSE	
 			CALL Gqvc.RecursiveDirectory('$(Gqvc.Dir.v.Clone.SrcDir)',1,'Gqvc.RecursiveFile','*'); // read all directories
 			
-			// create new directory path using old structure
-			[_Gqvc.ReplicateDir]:
-			LOAD DISTINCT *;
-			LOAD 
-				LEFT(Gqvc.FileName,INDEX(Gqvc.FileName,'\',-1)-1) AS SourceDir,
-				REPLACE(LEFT(Gqvc.FileName,INDEX(Gqvc.FileName,'\',-1)-1),'$(Gqvc.Dir.v.Clone.SrcDir)','$(Gqvc.Dir.v.Clone.TrgDir)') AS TargetDir
-			RESIDENT 
-				Gqvc.ScannedFileList;
-			LET Gqvc.Dir.v.Clone.NoOfScannedDir = NOOFROWS('_Gqvc.ReplicateDir');
-	
-			CALL Gqvc.LogInformation('Gqvc.CloneDirectory: Scanned [$(Gqvc.Dir.v.Clone.NoOfScannedDir)] directories in source [$(Gqvc.Dir.v.Clone.SrcDir)]');
+			// Check for non-empty directory structure
+			IF $(Gqvc.Macro.v.TableExists('Gqvc.ScannedFileList')) = -1 OR NOOFROWS('Gqvc.ScannedFileList') = 0 THEN
+				CALL Gqvc.LogInformation('Gqvc.CloneDirectory: Table [Gqvc.ScannedFileList] is empty. Ensure source directory is not empty.');
+				CALL Gqvc.LogError('Gqvc.CloneDirectory: Empty or invalid source directory structure. CloneDirectory cannot proceed.');
 			
-			IF $(Gqvc.Dir.v.Clone.NoOfScannedDir) > 0 THEN  // Ensure atleast one sub-directory exists
-				LET Gqvc.Dir.v.Clone.Counter = 0;
-				// create new directory
-				FOR i=0 to NOOFROWS('_Gqvc.ReplicateDir') - 1
-					LET Gqvc.Dir.v.Clone.ReproduceDir = PEEK('TargetDir',i,'_Gqvc.ReplicateDir');
-					CALL Gqvc.CreateDirectory('$(Gqvc.Dir.v.Clone.ReproduceDir)');
-					LET Gqvc.Dir.v.Clone.Counter = $(Gqvc.Dir.v.Clone.Counter) + 1;
-					//TRACE Gqvc.CloneDirectory: New directory [$(Gqvc.Dir.v.Clone.ReproduceDir)] created;
-					//CALL Gqvc.LogInformation('Gqvc.CloneDirectory: New directory [$(Gqvc.Dir.v.Clone.ReproduceDir)] created');
-				NEXT
-				TRACE Gqvc.CloneDirectory: Directories cloned or attempted to clone [$(Gqvc.Dir.v.Clone.Counter)];
-				CALL Gqvc.LogInformation('Gqvc.CloneDirectory: Directories cloned or attempted to clone [$(Gqvc.Dir.v.Clone.Counter)]');
+			// create new directory path using old structure	
 			ELSE
-				TRACE Gqvc.CloneDirectory: Source directory is empty. No directories were cloned;
-				CALL Gqvc.LogInformation('Gqvc.CloneDirectory: Source directory is empty. No directories were cloned');				
+			
+				[_Gqvc.ReplicateDir]:
+				LOAD DISTINCT *;
+				LOAD 
+					LEFT(Gqvc.FileName,INDEX(Gqvc.FileName,'\',-1)-1) AS SourceDir,
+					REPLACE(LEFT(Gqvc.FileName,INDEX(Gqvc.FileName,'\',-1)-1),'$(Gqvc.Dir.v.Clone.SrcDir)','$(Gqvc.Dir.v.Clone.TrgDir)') AS TargetDir
+				RESIDENT 
+					Gqvc.ScannedFileList;
+				LET Gqvc.Dir.v.Clone.NoOfScannedDir = NOOFROWS('_Gqvc.ReplicateDir');
+		
+				CALL Gqvc.LogInformation('Gqvc.CloneDirectory: Scanned [$(Gqvc.Dir.v.Clone.NoOfScannedDir)] directories in source [$(Gqvc.Dir.v.Clone.SrcDir)]');
+				
+				IF $(Gqvc.Dir.v.Clone.NoOfScannedDir) > 0 THEN  // Ensure atleast one sub-directory exists
+					LET Gqvc.Dir.v.Clone.Counter = 0;
+					// create new directory
+					FOR i=0 to NOOFROWS('_Gqvc.ReplicateDir') - 1
+						LET Gqvc.Dir.v.Clone.ReproduceDir = PEEK('TargetDir',i,'_Gqvc.ReplicateDir');
+						CALL Gqvc.CreateDirectory('$(Gqvc.Dir.v.Clone.ReproduceDir)');
+						LET Gqvc.Dir.v.Clone.Counter = $(Gqvc.Dir.v.Clone.Counter) + 1;
+						//TRACE Gqvc.CloneDirectory: New directory [$(Gqvc.Dir.v.Clone.ReproduceDir)] created;
+						//CALL Gqvc.LogInformation('Gqvc.CloneDirectory: New directory [$(Gqvc.Dir.v.Clone.ReproduceDir)] created');
+					NEXT
+					TRACE Gqvc.CloneDirectory: Directories cloned or attempted to clone [$(Gqvc.Dir.v.Clone.Counter)];
+					CALL Gqvc.LogInformation('Gqvc.CloneDirectory: Directories cloned or attempted to clone [$(Gqvc.Dir.v.Clone.Counter)]');
+				ELSE
+					TRACE Gqvc.CloneDirectory: Source directory is empty. No directories were cloned;
+					CALL Gqvc.LogInformation('Gqvc.CloneDirectory: Source directory is empty. No directories were cloned');				
+				END IF
 			END IF
 		END IF
 	ELSE
