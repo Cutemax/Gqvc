@@ -1,7 +1,7 @@
 ﻿<TextObjectProperties>
   <Layout>
     <Frame>
-      <BorderWidth>0</BorderWidth>
+      <BorderWidth>4</BorderWidth>
       <BorderEffect>FLAT</BorderEffect>
       <Color>
         <Mode>COLORAREA_SOLID</Mode>
@@ -10,22 +10,31 @@
         <FillPattern>COLORAREA_PATTERN1</FillPattern>
         <PrimaryCol>
           <Col>
-            <Red>4</Red>
-            <Green>108</Green>
-            <Blue>193</Blue>
+            <Red>155</Red>
+            <Green>205</Green>
+            <Blue>255</Blue>
             <Alpha>255</Alpha>
           </Col>
           <IsCalculated>false</IsCalculated>
           <ColorExpr></ColorExpr>
         </PrimaryCol>
-        <SecondaryCol></SecondaryCol>
+        <SecondaryCol>
+          <Col>
+            <Red>200</Red>
+            <Green>200</Green>
+            <Blue>200</Blue>
+            <Alpha>255</Alpha>
+          </Col>
+          <IsCalculated>false</IsCalculated>
+          <ColorExpr></ColorExpr>
+        </SecondaryCol>
         <Alpha>255</Alpha>
       </Color>
       <Font>
-        <FontName>Calibri</FontName>
+        <FontName>Tahoma</FontName>
         <PointSize1000>20000</PointSize1000>
         <Underline>false</Underline>
-        <Bold>true</Bold>
+        <Bold>false</Bold>
         <Italic>false</Italic>
         <DropShadow>false</DropShadow>
       </Font>
@@ -67,9 +76,9 @@
         <FillPattern>COLORAREA_PATTERN1</FillPattern>
         <PrimaryCol>
           <Col>
-            <Red>210</Red>
-            <Green>210</Green>
-            <Blue>210</Blue>
+            <Red>136</Red>
+            <Green>196</Green>
+            <Blue>255</Blue>
             <Alpha>255</Alpha>
           </Col>
           <IsCalculated>false</IsCalculated>
@@ -94,9 +103,9 @@
         <FillPattern>COLORAREA_PATTERN1</FillPattern>
         <PrimaryCol>
           <Col>
-            <Red>232</Red>
-            <Green>232</Green>
-            <Blue>232</Blue>
+            <Red>155</Red>
+            <Green>205</Green>
+            <Blue>255</Blue>
             <Alpha>255</Alpha>
           </Col>
           <IsCalculated>false</IsCalculated>
@@ -157,8 +166,8 @@
       <RoundedShape>true</RoundedShape>
       <EnableTopLeftRounded>true</EnableTopLeftRounded>
       <EnableTopRightRounded>true</EnableTopRightRounded>
-      <EnableBottomLeftRounded>true</EnableBottomLeftRounded>
-      <EnableBottomRightRounded>true</EnableBottomRightRounded>
+      <EnableBottomLeftRounded>false</EnableBottomLeftRounded>
+      <EnableBottomRightRounded>false</EnableBottomRightRounded>
       <Light>3FEE666666666666</Light>
       <Dark>3FC3333333333333</Dark>
       <Rainbow>false</Rainbow>
@@ -182,16 +191,16 @@
       </ScrollBkgColor>
       <ScrollButtonColor>
         <Col>
-          <Red>192</Red>
-          <Green>192</Green>
-          <Blue>192</Blue>
+          <Red>0</Red>
+          <Green>128</Green>
+          <Blue>255</Blue>
           <Alpha>255</Alpha>
         </Col>
         <IsCalculated>false</IsCalculated>
         <ColorExpr></ColorExpr>
       </ScrollButtonColor>
       <ScrollStyle>SCROLL_SIX</ScrollStyle>
-      <ScrollWidth>38</ScrollWidth>
+      <ScrollWidth>62</ScrollWidth>
       <AllowModify>true</AllowModify>
       <CopyImageIcon>false</CopyImageIcon>
       <PreserveScrollPosition>false</PreserveScrollPosition>
@@ -219,9 +228,9 @@
       <FillPattern>COLORAREA_PATTERN1</FillPattern>
       <PrimaryCol>
         <Col>
-          <Red>54</Red>
-          <Green>54</Green>
-          <Blue>54</Blue>
+          <Red>255</Red>
+          <Green>255</Green>
+          <Blue>255</Blue>
           <Alpha>255</Alpha>
         </Col>
         <IsCalculated>false</IsCalculated>
@@ -237,9 +246,9 @@
       <FillPattern>COLORAREA_PATTERN1</FillPattern>
       <PrimaryCol>
         <Col>
-          <Red>214</Red>
-          <Green>231</Green>
-          <Blue>248</Blue>
+          <Red>0</Red>
+          <Green>128</Green>
+          <Blue>255</Blue>
           <Alpha>255</Alpha>
         </Col>
         <IsCalculated>false</IsCalculated>
@@ -253,10 +262,7 @@
     <Bmp enctype="base64"></Bmp>
     <BkgAlpha>255</BkgAlpha>
     <Text>
-      <v>='Generic Qlikview Components'
-&amp; Chr(10) &amp;
-'Version: ' &amp; Gqvc.ChangeLog.v.Version
-</v>
+      <v>Generic Qlikview Components</v>
     </Text>
     <ImageRepresentation></ImageRepresentation>
     <AllowVerticalScrollBar>false</AllowVerticalScrollBar>

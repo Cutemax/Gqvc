@@ -856,7 +856,7 @@
       <int>3</int>
     </InterOrder>
   </BookmarkSortOrder>
-  <ScriptTabActiveTab>0</ScriptTabActiveTab>
+  <ScriptTabActiveTab>1</ScriptTabActiveTab>
   <ModuleSystemAccessIntended>0</ModuleSystemAccessIntended>
   <InhibitAggressiveQvdCleaning>false</InhibitAggressiveQvdCleaning>
   <Alerts></Alerts>
@@ -1254,7 +1254,7 @@
       <Alpha>255</Alpha>
     </ColorAreaDef>
   </SelectionBgColor>
-  <ObjectCaptionStyle>OCS_SIMPLIFIED_AIR</ObjectCaptionStyle>
+  <ObjectCaptionStyle>OCS_GLASS</ObjectCaptionStyle>
   <DefaultTheme></DefaultTheme>
   <DisableLayoutUndo>false</DisableLayoutUndo>
   <ClientGracefulMode>CG_INDICATE</ClientGracefulMode>

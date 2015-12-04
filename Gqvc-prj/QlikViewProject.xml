@@ -1,4 +1,4 @@
-﻿<!-- Last project change: 2015-01-21 00:46:05 (2015-01-21 00:46:05) -->
+﻿<!-- Last project change: 2015-12-04 14:33:54 (2015-12-04 14:33:54) -->
 <PrjQlikViewProject>
   <GLOBAL>
     <AllPropertiesFileName>AllProperties.xml</AllPropertiesFileName>
@@ -15,12 +15,12 @@
       <IsActive>true</IsActive>
       <ChildObjects>
         <PrjFrameParentDef>
-          <ObjectId>Document\TX01</ObjectId>
+          <ObjectId>Document\UI_Info_Body_TX04</ObjectId>
           <Rect>
-            <Left>218</Left>
-            <Top>55</Top>
+            <Left>1841</Left>
+            <Top>353</Top>
             <Width>1575</Width>
-            <Height>640</Height>
+            <Height>453</Height>
           </Rect>
           <MinimizedRect>
             <Left>0</Left>
@@ -30,6 +30,74 @@
           </MinimizedRect>
           <ShowMode>1</ShowMode>
           <ZedLevel>-1</ZedLevel>
+        </PrjFrameParentDef>
+        <PrjFrameParentDef>
+          <ObjectId>Document\UI_Info_Body_TX03</ObjectId>
+          <Rect>
+            <Left>216</Left>
+            <Top>353</Top>
+            <Width>1575</Width>
+            <Height>453</Height>
+          </Rect>
+          <MinimizedRect>
+            <Left>0</Left>
+            <Top>0</Top>
+            <Width>297</Width>
+            <Height>102</Height>
+          </MinimizedRect>
+          <ShowMode>1</ShowMode>
+          <ZedLevel>-1</ZedLevel>
+        </PrjFrameParentDef>
+        <PrjFrameParentDef>
+          <ObjectId>Document\UI_Info_CL_TB01</ObjectId>
+          <Rect>
+            <Left>216</Left>
+            <Top>850</Top>
+            <Width>3997</Width>
+            <Height>900</Height>
+          </Rect>
+          <MinimizedRect>
+            <Left>0</Left>
+            <Top>0</Top>
+            <Width>297</Width>
+            <Height>102</Height>
+          </MinimizedRect>
+          <ShowMode>1</ShowMode>
+          <ZedLevel>0</ZedLevel>
+        </PrjFrameParentDef>
+        <PrjFrameParentDef>
+          <ObjectId>Document\UI_Info_Hdr_TX05</ObjectId>
+          <Rect>
+            <Left>213</Left>
+            <Top>156</Top>
+            <Width>1581</Width>
+            <Height>200</Height>
+          </Rect>
+          <MinimizedRect>
+            <Left>0</Left>
+            <Top>0</Top>
+            <Width>297</Width>
+            <Height>102</Height>
+          </MinimizedRect>
+          <ShowMode>1</ShowMode>
+          <ZedLevel>1</ZedLevel>
+        </PrjFrameParentDef>
+        <PrjFrameParentDef>
+          <ObjectId>Document\UI_Info_Hdr_TX01</ObjectId>
+          <Rect>
+            <Left>1838</Left>
+            <Top>156</Top>
+            <Width>1581</Width>
+            <Height>200</Height>
+          </Rect>
+          <MinimizedRect>
+            <Left>0</Left>
+            <Top>0</Top>
+            <Width>297</Width>
+            <Height>102</Height>
+          </MinimizedRect>
+          <ShowMode>1</ShowMode>
+          <ZedLevel>1</ZedLevel>
         </PrjFrameParentDef>
       </ChildObjects>
     </PrjSheetProperties>
