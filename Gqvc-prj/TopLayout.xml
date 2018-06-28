@@ -1,6 +1,6 @@
 ﻿<TopLayout>
   <ZoomLevel>0000000000000000</ZoomLevel>
-  <WindowTitle></WindowTitle>
+  <WindowTitle>Gqvc</WindowTitle>
   <TabRowActiveFont>
     <FontName>Arial</FontName>
     <PointSize1000>9000</PointSize1000>
@@ -46,7 +46,7 @@
     <SecondaryCol></SecondaryCol>
     <Alpha>255</Alpha>
   </BkgColor>
-  <ShowTabRow>true</ShowTabRow>
+  <ShowTabRow>false</ShowTabRow>
   <BkgImageSettings>
     <ImageStyle>
       <StretchMode>IMAGE_NOSTRETCH</StretchMode>

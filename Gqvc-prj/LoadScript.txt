@@ -2,7 +2,54 @@
 // ***************	Generic Qlikview Components Library	*************** 
 // ***************	Author: Syed Maqsood	*************** 
 // ***************	First version Date: 19/09/2014	*************** 
-// ***************	Last modified Date: 01/12/2015	*************** 
+// ***************	Last modified Date: 28/06/2018	*************** 
+///$tab Gqvc Configuration
+// *********************** Gqvc global configuration *********************** 
+
+/* Gqvc.Config.v.SystemAccessMode settings
+0 -> Qlikview default and does not require additional security settings
+1 -> Creates files/folders; Requires Settings -> "Can Execute External Programs" 
+2 -> Can create and delete files/folders; Requires Settings -> "Can Execute External Programs" 
+*/
+SET Gqvc.Config.v.SystemAccessMode = 0;
+TRACE Gqvc.Config.v.SystemAccessMode = $(Gqvc.Config.v.SystemAccessMode);
+
+/* Gqvc.Config.v.LogMode settings
+0 -> No log created 
+1 -> Log file stored & read as flat file. Log will not be created until script has successfully ran and Gqvc.Cleanup called at the end of script.
+2 -> Log file stored as QVD. Log will not be created until script has successfully ran and Gqvc.Cleanup called at the end of script.
+3 -> Can create logs, as flat file, at run time; Requires Settings -> "Can Execute External Programs" 
+*/ 
+SET Gqvc.Config.v.LogMode = 2;
+TRACE Gqvc.Config.v.LogMode = $(Gqvc.Config.v.LogMode);
+
+/* Gqvc.Config.v.CleanupVariables settings for Gqvc.Cleanup
+0 -> Deletes routines specific variables only
+1 -> Deletes macros along with routine specific variables
+2 -> Deletes all Gqvc variables except Gqvc.ChangeLog.v.Version 
+*/ 
+SET Gqvc.Config.v.CleanupVariables = 0;
+TRACE Gqvc.Config.v.CleanupVariables = $(Gqvc.Config.v.CleanupVariables);
+
+/* Gqvc.Config.v.CleanupTables settings for Gqvc.Cleanup
+Gqvc.CleanupTables defines a matrix and mode to be deleted. It is a customizable matrix and can include tables added in future
+*/ 
+SET Gqvc.Config.v.CleanupTables = 5;
+TRACE Gqvc.Config.v.CleanupTables = $(Gqvc.Config.v.CleanupTables);
+
+TRACE ************************** End of Gqvc default settings **************************
+;
+
+[Gqvc.CleanupTables]:
+LOAD * INLINE [
+    CleanupTables, Mode0, Mode1, Mode2, Mode3, Mode4, Mode5
+    Gqvc.Version, 0, 1, 0, 0, 1, 1
+    Gqvc.ClearVariables, 0, 0, 1, 0, 1, 0
+    Gqvc.ScannedFileList, 0, 0, 0, 1, 1, 1
+    Gqvc.ScannedDirList, 0, 0, 0, 1, 1, 1
+];
+// *********************** Gqvc global configuration *********************** 
+
 ///$tab Change Log 
 /* *********************** Change Log *********************** 
 Versioning convention 
@@ -56,6 +103,8 @@ Date||Version||Change Description
 03/12/2015||4.2.8||Added Gqvc.ScannedDirList table to Gqvc.RecursiveDirectory routine. This table will only be created while traversing non-root directories. 
 03/12/2015||4.2.8||Added Gqvc.ScannedDirList to Gqvc.CleanupTables; This will ensure safe delete of the table by clean up routines.
 04/12/2015||4.2.8||New objects in UI that gives version, configuration details along with Change log table
+08/02/2017||4.2.9||Added Gqvc config help text. Hide tab rows.
+28/06/2018||4.2.10||Added Gqvc.CreateWorkingDayCalendar routine
 ];
 
 LET Gqvc.ChangeLog.v.Version = PEEK('Gqvc.Version',-1,'Gqvc.Version'); 
@@ -63,53 +112,6 @@ LET Gqvc.ChangeLog.v.Version = PEEK('Gqvc.Version',-1,'Gqvc.Version');
 TRACE 
 ************************** Gqvc default settings **************************;
 TRACE Gqvc Version: $(Gqvc.ChangeLog.v.Version); 
-///$tab Gqvc Configuration
-// *********************** Gqvc global configuration *********************** 
-
-/* Gqvc.Config.v.SystemAccessMode settings
-0 -> Qlikview default and does not require additional security settings
-1 -> Creates files/folders; Requires Settings -> "Can Execute External Programs" 
-2 -> Can create and delete files/folders; Requires Settings -> "Can Execute External Programs" 
-*/
-SET Gqvc.Config.v.SystemAccessMode = 0;
-TRACE Gqvc.Config.v.SystemAccessMode = $(Gqvc.Config.v.SystemAccessMode);
-
-/* Gqvc.Config.v.LogMode settings
-0 -> No log created 
-1 -> Log file stored & read as flat file. Log will not be created until script has successfully ran and Gqvc.Cleanup called at the end of script.
-2 -> Log file stored as QVD. Log will not be created until script has successfully ran and Gqvc.Cleanup called at the end of script.
-3 -> Can create logs, as flat file, at run time; Requires Settings -> "Can Execute External Programs" 
-*/ 
-SET Gqvc.Config.v.LogMode = 2;
-TRACE Gqvc.Config.v.LogMode = $(Gqvc.Config.v.LogMode);
-
-/* Gqvc.Config.v.LogMode settings for Gqvc.Cleanup
-0 -> Deletes routines specific variables only
-1 -> Deletes macros along with routine specific variables
-2 -> Deletes all Gqvc variables except Gqvc.ChangeLog.v.Version 
-*/ 
-SET Gqvc.Config.v.CleanupVariables = 0;
-TRACE Gqvc.Config.v.CleanupVariables = $(Gqvc.Config.v.CleanupVariables);
-
-/* Gqvc.Config.v.LogMode settings for Gqvc.Cleanup
-Gqvc.CleanupTables defines a matrix and mode to be deleted. It is a custimizable matrix and can include tables added in future
-*/ 
-SET Gqvc.Config.v.CleanupTables = 5;
-TRACE Gqvc.Config.v.CleanupTables = $(Gqvc.Config.v.CleanupTables);
-
-TRACE ************************** End of Gqvc default settings **************************
-;
-
-[Gqvc.CleanupTables]:
-LOAD * INLINE [
-    CleanupTables, Mode0, Mode1, Mode2, Mode3, Mode4, Mode5
-    Gqvc.Version, 0, 1, 0, 0, 1, 1
-    Gqvc.ClearVariables, 0, 0, 1, 0, 1, 0
-    Gqvc.ScannedFileList, 0, 0, 0, 1, 1, 1
-    Gqvc.ScannedDirList, 0, 0, 0, 1, 1, 1
-];
-// *********************** Gqvc global configuration *********************** 
-
 ///$tab Script Macros 
 // Macros  
 // ****************************** Start Sub ****************************** 
@@ -135,8 +137,8 @@ Typically you could create three list boxes for dynamic data exploration. Replac
 	2. for field selection
 		List box expression (content inside double quotes): "=IF(LEFT($Field,1)<>'%' AND SUBFIELD($Field,'.',1)<>'Gqvc', $Field)"
 	3. To display data in a field
-		List box expression (content inside double quotes): "=$(v.CMN.SelectedField)"
-		List box title (content inside double quotes): "='Field values (' & COUNT($(v.CMN.SelectedField)) & ')'"	
+		List box expression (content inside double quotes): "=$(Gqvc.Macro.v.SelectedField)"
+		List box title (content inside double quotes): "='Field values (' & COUNT($(Gqvc.Macro.v.SelectedField)) & ')'"	
 */ 
 LET Gqvc.Macro.v.GetSelectedField = '=' & CHR(39) & '[' & CHR(39) & CHR(38) & 'GETFIELDSELECTIONS(' & CHR(36) & 'Field,' & CHR(39) & CHR(39) & ',1)' & CHR(38) & CHR(39) & ']' & CHR(39);
 SET Gqvc.Macro.v.SelectedField = '=Gqvc.Macro.v.GetSelectedField';
@@ -884,6 +886,8 @@ Creates a log file and writes event instantly. If a log file does not exists, it
 @param 2 String, Optional. Log level. Acceptable values 'E', 'I' and 'W' (case insensitive) for Error, Information and Warning respectively. Default is Information.
 @param 3 String, Optional. Store path for log file, if different from current directory. By default, log is stored in same directory as the QV doc.
 @syntax CALL Gqvc.LogEvent('LogMessage',['LogLevel'],['DirectoryPath']); 
+
+Note: Do not use comma, semicolon, single or double quotes or other special characters in the log message.
 */
 
 SET Gqvc.Log.v.NewRun = ; // Resets for each run 
@@ -1126,6 +1130,70 @@ SUB Gqvc.CreateCalendar(TableName,StartDate,EndDate,FieldPrefix)
 	END IF 
 END SUB 
 // ****************************** End Sub ****************************** 
+
+// ****************************** Start Sub ****************************** 
+/* 
+Builds a generic calendar, with working days, based on a start and end date values. 
+
+@param 1 String. New calendar table name 
+@param 2 Number. Calendar start date in numeric format 
+@param 3 Number. Calendar end date in numeric format 
+@param 4 String, Optional. Calendar field name prefix 
+@param 5 String, Optional. If present, should be comma separated numeric dates
+
+@syntax CALL Gqvc.CreateWorkingDayCalendar('NewTableName','StartDateNum','EndDateNum',['FieldPrefix'],['CommaSeparatedHolidayDatesNum']); 
+@Ex. CALL Gqvc.CreateWorkingDayCalendar('NewTableName','43435','43465',['FieldPrefix'],['43459,43460']); 
+*/ 
+
+SUB Gqvc.CreateWorkingDayCalendar(TableName,StartDate,EndDate,FieldPrefix,HolidayList) 
+	IF $(Gqvc.Macro.v.TableExists('$(TableName)')) <> -1 THEN 
+	    TRACE Table: [$(TableName)], already exists. Calendar table cannot be created;
+	    CALL Gqvc.LogEvent('Table: [$(TableName)], already exists. Calendar table cannot be created','E');		 
+	ELSEIF $(StartDate) > $(EndDate) THEN 
+		TRACE Start date should be less than or equal to End date. Calendar Table: [$(TableName)], will not be created;
+		CALL Gqvc.LogEvent('Start date should be less than or equal to End date. Calendar Table: [$(TableName)], will not be created','E');	 
+	ELSE	 
+	
+		LET Gqvc.Cal.v.HolidayList = IF(LEN(TRIM('$(HolidayList)'))=0,-1,'$(HolidayList)'); // Setting -1 if no holiday list if available
+		LET Gqvc.Cal.v.WeekEnd =   IF(LEN(TRIM('$(DayNames)'))=0,CHR(39)&'Sat'&CHR(39)&CHR(44)&CHR(39)&'Sun'&CHR(39),CHR(39)&SUBFIELD('$(DayNames)',';',-2) &CHR(39)&CHR(44)&CHR(39)& SUBFIELD('$(DayNames)',';',-1) &CHR(39)); // set Sat & Sun as weekends if reserved variable DayNames is not available  
+
+		[$(TableName)]:
+		LOAD 
+			[_Date]					AS [$(FieldPrefix)Date],		// Link on Field Name 
+			NUM([_Date])			AS [%$(FieldPrefix)Date],		// Link on %field name 
+			YEAR(_Date)				AS [$(FieldPrefix)Year], 
+			MONTH(_Date)			AS [$(FieldPrefix)Month], 
+			DAY(_Date)				AS [$(FieldPrefix)Day],	 
+			WEEK(_Date)				AS [$(FieldPrefix)Week], 
+			WEEKDAY(_Date)			AS [$(FieldPrefix)Day Name],	 
+			MONTHNAME(_Date)		AS [$(FieldPrefix)Month Year], 
+			QUARTERNAME(_Date)		AS [$(FieldPrefix)Quarter Name], 
+			'Q' & CEIL(MONTH(_Date)/3)		AS [$(FieldPrefix)Quarter], 
+			RANGESUM(_WorkingDayNum,PEEK(_WorkingDayNum,-1*ITERNO())) AS _WorkingDayNum,
+			_WeekEnd,
+			_IsHoliday
+		;
+		LOAD *, IF(_WeekEnd=1 OR _IsHoliday=1,0,1) AS _WorkingDayNum;
+		LOAD 
+			DATE(_MinDate + IterNo()) AS _Date, 
+			IF(MIXMATCH(WEEKDAY(NUM(_MinDate + IterNo())),$(Gqvc.Cal.v.WeekEnd)),1,0) AS  _WeekEnd,
+			IF(MIXMATCH(NUM(_MinDate + IterNo()),$(Gqvc.Cal.v.HolidayList)),1,0) AS _IsHoliday,
+			ITERNO() AS _WorkingDayNum
+		WHILE 
+			_MinDate + IterNo() <= _MaxDate 
+		;		 
+		LOAD 
+			$(StartDate)-1 AS _MinDate, 
+			$(EndDate) AS _MaxDate 
+			AUTOGENERATE (1)
+		; 
+	END IF 
+	
+	SET Gqvc.Cal.v.HolidayList =;
+	SET Gqvc.Cal.v.WeekEnd =;
+
+END SUB 
+// ****************************** End Sub ****************************** 
 ///$tab DB Management 
 // ****************************** Start Sub ****************************** 
 SUB Gqvc.GetTimestampFromSqlDB(ReturnDBTimestamp) 
@@ -1159,6 +1227,65 @@ Retrieves the current timestamp from the DB.
 
 	TRACE Gqvc.GetTimestampFromOracleDB:[$(ReturnDBTimestamp)]; 
 	CALL Gqvc.DropTable('TempTimestampFromDB'); 
+END SUB 
+// ****************************** End Sub ****************************** 
+
+
+
+// ****************************** Start Sub ****************************** 
+SUB Gqvc.GetDataDictionaryFromSqlDB(ReturnDBTimestamp) 
+/* 
+Retrieves the table/view information from the DB.
+@syntax CALL Gqvc.GetDataDictionaryFromSqlDB; 
+*/	
+	
+SET ErrorMode = 0;
+
+[SQLDB]:
+SELECT NAME AS [DB Name],DATABASE_ID AS [DB ID] FROM SYS.DATABASES;
+
+DISCONNECT;
+
+FOR i=0 to NOOFROWS('DB')-1
+	LET v.CatalogName = PEEK('DB Name',i,'SQLDB');
+	LET v.ConnectionString = 'OLEDB CONNECT TO [Provider=SQLOLEDB.1;Integrated Security=SSPI;Persist Security Info=False;Data Source=PROD-SQLRPT\SANDBOX;Initial Catalog=' & '$(v.CatalogName)' & ';Use Procedure for Prepare=1;Auto Translate=True;Packet Size=4096;Use Encryption for Data=False;Tag with column collation when possible=False]';
+
+	$(v.ConnectionString);
+	
+	IF MATCH(ScriptError,5,9) THEN
+
+	TRACE SQLDB $(v.CatalogName) not found;
+	
+	ELSEIF MIXMATCH('$(v.CatalogName)','DBA','master','tempdb','msdb','Clive','AdHoc','Supplier')=0 THEN
+	
+		[DB Information]:
+		SELECT TABLE_CATALOG AS Name, TABLE_NAME AS [Object Name], TABLE_TYPE AS [Type] FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_CATALOG='$(v.CatalogName)';
+	
+		IF MATCH(ScriptError,10,11) THEN
+			TRACE DB not found;
+		END IF
+		
+		[Object Info]:
+		SELECT  T.NAME AS [Object Name], C.NAME AS [COLUMN NAME], P.NAME AS [DATA TYPE], P.MAX_LENGTH AS[SIZE],   
+				CAST(P.PRECISION AS VARCHAR) +'/'+ CAST(P.SCALE AS VARCHAR) AS [PRECISION/SCALE]
+		FROM SYS.OBJECTS AS T
+			JOIN SYS.COLUMNS AS C
+			ON T.OBJECT_ID=C.OBJECT_ID
+			JOIN SYS.TYPES AS P
+			ON C.SYSTEM_TYPE_ID=P.SYSTEM_TYPE_ID
+		WHERE T.TYPE_DESC IN ('USER_TABLE','VIEW');				
+		
+		IF MATCH(ScriptError,10,11) THEN
+			TRACE SYS.OBJECTS error;
+		END IF
+		
+	END IF
+
+NEXT
+
+STORE [DB Information] INTO [DB Information.qvd] (QVD);	
+	
+	
 END SUB 
 // ****************************** End Sub ****************************** 
 ///$tab Cleanup 

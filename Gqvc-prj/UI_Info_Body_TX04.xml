@@ -64,7 +64,29 @@
       <ClearIcon>false</ClearIcon>
       <ClearOtherIcon>false</ClearOtherIcon>
       <LockIcon>false</LockIcon>
-      <HelpText></HelpText>
+      <HelpText>
+        <v>Gqvc.Config.v.SystemAccessMode settings
+0 -&gt; Qlikview default and does not require additional security settings
+1 -&gt; Creates files/folders; Requires Settings -&gt; &quot;Can Execute External Programs&quot; 
+2 -&gt; Can create and delete files/folders; Requires Settings -&gt; &quot;Can Execute External Programs&quot; 
+
+
+Gqvc.Config.v.LogMode settings
+0 -&gt; No log created 
+1 -&gt; Log file stored &amp; read as flat file. Log will not be created until script has successfully ran and Gqvc.Cleanup called at the end of script.
+2 -&gt; Log file stored as QVD. Log will not be created until script has successfully ran and Gqvc.Cleanup called at the end of script.
+3 -&gt; Can create logs, as flat file, at run time; Requires Settings -&gt; &quot;Can Execute External Programs&quot;
+
+
+Gqvc.Config.v.LogMode settings for Gqvc.Cleanup
+0 -&gt; Deletes routines specific variables only
+1 -&gt; Deletes macros along with routine specific variables
+2 -&gt; Deletes all Gqvc variables except Gqvc.ChangeLog.v.Version 
+
+
+Gqvc.Config.v.LogMode settings for Gqvc.Cleanup
+Gqvc.CleanupTables defines a matrix and mode to be deleted. It is a customizable matrix and can include tables added in future</v>
+      </HelpText>
       <ObjectId></ObjectId>
       <ShrinkFrameToData>true</ShrinkFrameToData>
       <ShowCaption>false</ShowCaption>

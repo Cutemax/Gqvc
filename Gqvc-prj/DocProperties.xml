@@ -7,7 +7,7 @@
   <OpeningExec></OpeningExec>
   <OpenPicTimeout>0</OpenPicTimeout>
   <OpenPicCloseOnClick>0</OpenPicCloseOnClick>
-  <OpenPicCloseWhenLoaded>0</OpenPicCloseWhenLoaded>
+  <OpenPicCloseWhenLoaded>1</OpenPicCloseWhenLoaded>
   <DynamicReduceData>false</DynamicReduceData>
   <HideUnavailableMenuOptions>false</HideUnavailableMenuOptions>
   <DefaultExportCharset>65001</DefaultExportCharset>
@@ -191,7 +191,7 @@
     <StrDevModeExtra></StrDevModeExtra>
   </TableViewerPrintSettings>
   <ProhibitBinaryLoad>false</ProhibitBinaryLoad>
-  <Author></Author>
+  <Author>Syed Maqsood</Author>
   <FreeDays>0</FreeDays>
   <WarningDays>0</WarningDays>
   <SaveAsPrim>false</SaveAsPrim>
@@ -856,7 +856,7 @@
       <int>3</int>
     </InterOrder>
   </BookmarkSortOrder>
-  <ScriptTabActiveTab>1</ScriptTabActiveTab>
+  <ScriptTabActiveTab>9</ScriptTabActiveTab>
   <ModuleSystemAccessIntended>0</ModuleSystemAccessIntended>
   <InhibitAggressiveQvdCleaning>false</InhibitAggressiveQvdCleaning>
   <Alerts></Alerts>
@@ -1259,10 +1259,10 @@
   <DisableLayoutUndo>false</DisableLayoutUndo>
   <ClientGracefulMode>CG_INDICATE</ClientGracefulMode>
   <ServerGracefulMode>SG_CLIENT_OR_AUTO</ServerGracefulMode>
-  <AllowServerBookmarks>true</AllowServerBookmarks>
+  <AllowServerBookmarks>false</AllowServerBookmarks>
   <AllowServerAlerts>true</AllowServerAlerts>
-  <AllowServerObjects>true</AllowServerObjects>
-  <AllowServerReports>true</AllowServerReports>
+  <AllowServerObjects>false</AllowServerObjects>
+  <AllowServerReports>false</AllowServerReports>
   <TxBuFont></TxBuFont>
   <breakpointList></breakpointList>
   <IdleSecondsBeforeClose>0</IdleSecondsBeforeClose>
@@ -1280,7 +1280,77 @@
   <AllowServerCurrentSelectionBoxes>false</AllowServerCurrentSelectionBoxes>
   <AllowServerBookmarkObjects>false</AllowServerBookmarkObjects>
   <InitialSelection>false</InitialSelection>
-  <PublisherSchedule></PublisherSchedule>
+  <PublisherSchedule>
+    <Mode>SCHEDULE_NONE</Mode>
+    <StartTime></StartTime>
+    <Weekdays>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+    </Weekdays>
+    <Months>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+    </Months>
+    <MonthDays>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+    </MonthDays>
+    <MonthInternal>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+      <bool>false</bool>
+    </MonthInternal>
+    <DailyCounter>0</DailyCounter>
+    <HourlyMinutesCounter>0</HourlyMinutesCounter>
+    <WeeklyCounter>0</WeeklyCounter>
+    <MonthlyDays>false</MonthlyDays>
+  </PublisherSchedule>
   <ThumbNailSettings></ThumbNailSettings>
   <OnOpenActionItems></OnOpenActionItems>
   <OnSelectionActionItems></OnSelectionActionItems>
