@@ -2,8 +2,10 @@
 // ***************	Generic Qlikview Components Library	*************** 
 // ***************	Author: Syed Maqsood	*************** 
 // ***************	First version Date: 19/09/2014	*************** 
-// ***************	Last modified Date: 28/06/2018	*************** 
+// ***************	Last modified Date: 29/06/2019	*************** 
 ///$tab Gqvc Configuration
+TRACE 
+************************** Gqvc default settings **************************;
 // *********************** Gqvc global configuration *********************** 
 
 /* Gqvc.Config.v.SystemAccessMode settings
@@ -34,7 +36,7 @@ TRACE Gqvc.Config.v.CleanupVariables = $(Gqvc.Config.v.CleanupVariables);
 /* Gqvc.Config.v.CleanupTables settings for Gqvc.Cleanup
 Gqvc.CleanupTables defines a matrix and mode to be deleted. It is a customizable matrix and can include tables added in future
 */ 
-SET Gqvc.Config.v.CleanupTables = 5;
+SET Gqvc.Config.v.CleanupTables = 4;
 TRACE Gqvc.Config.v.CleanupTables = $(Gqvc.Config.v.CleanupTables);
 
 TRACE ************************** End of Gqvc default settings **************************
@@ -47,6 +49,7 @@ LOAD * INLINE [
     Gqvc.ClearVariables, 0, 0, 1, 0, 1, 0
     Gqvc.ScannedFileList, 0, 0, 0, 1, 1, 1
     Gqvc.ScannedDirList, 0, 0, 0, 1, 1, 1
+    Gqvc.HTML.Symbol, 0, 0, 1, 1, 1, 1
 ];
 // *********************** Gqvc global configuration *********************** 
 
@@ -105,12 +108,15 @@ Date||Version||Change Description
 04/12/2015||4.2.8||New objects in UI that gives version, configuration details along with Change log table
 08/02/2017||4.2.9||Added Gqvc config help text. Hide tab rows.
 28/06/2018||4.2.10||Added Gqvc.CreateWorkingDayCalendar routine
+05/02/2019||4.2.11||Added Gqvc.Macro.v.CleanString
+14/02/2019||4.2.12||Overhauled Gqvc.GetDataDictionaryFromSqlDB routine. Only OLEDB connection is tested.
+30/05/2019||4.2.13||Update for Gqvc.GetDataDictionaryFromSqlDB routine. ODBC connections will now need encrypted user id and password as mandatory arguments.
+20/06/2019||4.3.0||Added Gqvc.HTML.Symbol table to map  html tags and ascii character codes. Limited use at present with no supporting Gqvc routines.
+29/06/2019||4.3.0||Data extract routines added to support Full, Delta & Delta with deleted records. Limited use with no usecase guidelines and tested only against SQL servre.
 ];
 
 LET Gqvc.ChangeLog.v.Version = PEEK('Gqvc.Version',-1,'Gqvc.Version'); 
 
-TRACE 
-************************** Gqvc default settings **************************;
 TRACE Gqvc Version: $(Gqvc.ChangeLog.v.Version); 
 ///$tab Script Macros 
 // Macros  
@@ -121,13 +127,14 @@ Param 2 Positve Integer: Binary string lenght
 Syntax $(Gqvc.Macro.v.CreateBitString(2,3)); 
 */ 
 SET Gqvc.Macro.v.CreateBitString = If(Len(Trim($2))=0, Repeat(0,$1-1) & 1, Repeat(0,$1-1) & 1 & Repeat(0,$2-$1)); 
-
 SET Gqvc.Macro.v.DefaultIfEmpty = If(Len(Trim($1))= 0, $2, $1); // Returns second argument if first argument is empty 
 SET Gqvc.Macro.v.FieldExists = IF(Len(Trim($1))>0, IsNull(FieldValueCount($1)),-1); // Returns 0 if field exists else -1 
 SET Gqvc.Macro.v.TableExists = IF(Len(Trim($1))>0, IsNull(TableNumber($1)),-1); // Returns 0 if table exists else -1 
 SET Gqvc.Macro.v.FileExists = IF(Len(Trim($1))>0, IsNull(FileSize($1)),-1); // Returns 0 if file exists else -1 
 SET Gqvc.Macro.v.IsReserved = WildMatch($1,'Gqvc.*','_Gqvc.*'); // Returns integer > 0 if table/field name contains "Gqvc" else 0 
 SET Gqvc.Macro.v.CreateRandomName =  IF(Len(Trim($1))>0,$1 & '_','__Temp_') & Ceil(pow((Rand()+1)*10,Rand()+pi())); // Creates random name. Argument passed will be part of the name  
+SET Gqvc.Macro.v.CleanString = PURGECHAR($1,',./\# *-'); // Removes defined characters from source text. 
+
 
 /* 
 Standard variables required to build dynamic fields in list box. To be used in UI.
@@ -1139,7 +1146,7 @@ Builds a generic calendar, with working days, based on a start and end date valu
 @param 2 Number. Calendar start date in numeric format 
 @param 3 Number. Calendar end date in numeric format 
 @param 4 String, Optional. Calendar field name prefix 
-@param 5 String, Optional. If present, should be comma separated numeric dates
+@param 5 String, Optional. If present, should be comma separated numeric format dates
 
 @syntax CALL Gqvc.CreateWorkingDayCalendar('NewTableName','StartDateNum','EndDateNum',['FieldPrefix'],['CommaSeparatedHolidayDatesNum']); 
 @Ex. CALL Gqvc.CreateWorkingDayCalendar('NewTableName','43435','43465',['FieldPrefix'],['43459,43460']); 
@@ -1169,11 +1176,12 @@ SUB Gqvc.CreateWorkingDayCalendar(TableName,StartDate,EndDate,FieldPrefix,Holida
 			MONTHNAME(_Date)		AS [$(FieldPrefix)Month Year], 
 			QUARTERNAME(_Date)		AS [$(FieldPrefix)Quarter Name], 
 			'Q' & CEIL(MONTH(_Date)/3)		AS [$(FieldPrefix)Quarter], 
-			RANGESUM(_WorkingDayNum,PEEK(_WorkingDayNum,-1*ITERNO())) AS _WorkingDayNum,
+			RANGESUM(_WorkingDayNum,PEEK(_WorkingDayNum)) AS _WorkingDayNum,
+			IF(MONTHNAME(_Date)=MONTHNAME(PREVIOUS([_Date])),RANGESUM(_WorkingDayMonthNum,PEEK(_WorkingDayMonthNum)),_WorkingDayMonthNum)  AS _WorkingDayMonthNum,
 			_WeekEnd,
 			_IsHoliday
 		;
-		LOAD *, IF(_WeekEnd=1 OR _IsHoliday=1,0,1) AS _WorkingDayNum;
+		LOAD *, IF(_WeekEnd=1 OR _IsHoliday=1,0,1) AS _WorkingDayNum, IF(_WeekEnd=1 OR _IsHoliday=1,0,1) AS _WorkingDayMonthNum;
 		LOAD 
 			DATE(_MinDate + IterNo()) AS _Date, 
 			IF(MIXMATCH(WEEKDAY(NUM(_MinDate + IterNo())),$(Gqvc.Cal.v.WeekEnd)),1,0) AS  _WeekEnd,
@@ -1233,60 +1241,843 @@ END SUB
 
 
 // ****************************** Start Sub ****************************** 
-SUB Gqvc.GetDataDictionaryFromSqlDB(ReturnDBTimestamp) 
 /* 
+*** Supports both SQL Server integrated security and SQL authentication. ***
 Retrieves the table/view information from the DB.
-@syntax CALL Gqvc.GetDataDictionaryFromSqlDB; 
-*/	
-	
-SET ErrorMode = 0;
 
-[SQLDB]:
-SELECT NAME AS [DB Name],DATABASE_ID AS [DB ID] FROM SYS.DATABASES;
+@param 1 String. Type of connection to be used. Supports OLEDB, ODBC, LIB. 
+@param 2 String. Data base server name or library connection or ODBC connection 
+@param 3 String, Optional. DB Catalog name if OLEDB is used 
+@param 4 String, Optional. To force 32 bit or 64 bit connections when OLEDB connection is used. 
+@param 5 String, Optional. XUserID is mandatory for ODBC connections. For OLEDB connection this should be just user id, no encryption required.
+@param 6 String, Optional. XPassword is mandatory for ODBC connections. For OLEDB encrypted password is mandatory is user id is supplied as well.
 
-DISCONNECT;
+@syntax CALL Gqvc.GetDataDictionaryFromSqlDB('ConnectionType','DataSource',['Catalog'],['Driver'],['XUserID'],['XPassword']); 
+*/
 
-FOR i=0 to NOOFROWS('DB')-1
-	LET v.CatalogName = PEEK('DB Name',i,'SQLDB');
-	LET v.ConnectionString = 'OLEDB CONNECT TO [Provider=SQLOLEDB.1;Integrated Security=SSPI;Persist Security Info=False;Data Source=PROD-SQLRPT\SANDBOX;Initial Catalog=' & '$(v.CatalogName)' & ';Use Procedure for Prepare=1;Auto Translate=True;Packet Size=4096;Use Encryption for Data=False;Tag with column collation when possible=False]';
+SUB Gqvc.GetDataDictionaryFromSqlDB(ConnectionType,DataSource,Catalog,Driver,XUserID,XPassword)
+	// Check arguments
+	IF LEN(TRIM('$(ConnectionType)'))=0 OR MIXMATCH('$(ConnectionType)','LIB','OLEDB','ODBC')=0 THEN
+	
+		TRACE Gqvc.GetDataDictionaryFromSqlDB: Invalid connection. Only 'LIB','OLEDB','ODBC' are supported.; 
+		CALL Gqvc.LogError('Gqvc.GetDataDictionaryFromSqlDB: Invalid connection. Only LIB, OLEDB, ODBC are supported.');
+		//CALL Gqvc.LogError('Gqvc.GetDataDictionaryFromSqlDB: Error raised, exiting sub.');
+		EXIT SUB;
+	
+	ELSEIF LEN(TRIM('$(DataSource)'))=0 AND MIXMATCH('$(ConnectionType)','OLEDB','ODBC')>0 THEN
+		TRACE Gqvc.GetDataDictionaryFromSqlDB: Invalid or no data source.; 
+		CALL Gqvc.LogError('Gqvc.GetDataDictionaryFromSqlDB: Invalid or no data source.');
+		//CALL Gqvc.LogError('Gqvc.GetDataDictionaryFromSqlDB: Error raised, exiting sub.');
+		EXIT SUB;
+	
+	ELSEIF LEN(TRIM('$(Catalog)'))=0 AND MIXMATCH('$(ConnectionType)','OLEDB')>0 THEN
+		TRACE Gqvc.GetDataDictionaryFromSqlDB: Invalid or no catalog.; 
+		CALL Gqvc.LogError('Gqvc.GetDataDictionaryFromSqlDB: Invalid or no catalog.');
+		//CALL Gqvc.LogError('Gqvc.GetDataDictionaryFromSqlDB: Error raised, exiting sub.');
+		EXIT SUB;
+	
+	ELSEIF MIXMATCH('$(ConnectionType)','ODBC') AND (LEN('$(XUserID)')=0 OR LEN('$(XPassword)')=0) THEN
+		TRACE Gqvc.GetDataDictionaryFromSqlDB: ODBC connection requires encrypted user name and password.; 
+		CALL Gqvc.LogError('Gqvc.GetDataDictionaryFromSqlDB: ODBC connection requires encrypted user name and password.');
+		EXIT SUB;
+		
+	END IF 
 
-	$(v.ConnectionString);
-	
-	IF MATCH(ScriptError,5,9) THEN
-
-	TRACE SQLDB $(v.CatalogName) not found;
-	
-	ELSEIF MIXMATCH('$(v.CatalogName)','DBA','master','tempdb','msdb','Clive','AdHoc','Supplier')=0 THEN
-	
-		[DB Information]:
-		SELECT TABLE_CATALOG AS Name, TABLE_NAME AS [Object Name], TABLE_TYPE AS [Type] FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_CATALOG='$(v.CatalogName)';
-	
-		IF MATCH(ScriptError,10,11) THEN
-			TRACE DB not found;
+	// Build connection string
+	IF MIXMATCH('$(ConnectionType)','LIB') THEN
+		LET Gqvc.DB.v.SQL.ConnectString = '$(ConnectionType) CONNECT TO ' & CHR(39) & '$(DataSource)' & CHR(39);		
+	ELSEIF '$(ConnectionType)'='OLEDB' THEN
+		IF LEN('$(XUserID)')=0 THEN
+			LET Gqvc.DB.v.SQL.ConnectString = 'OLEDB CONNECT$(Driver) TO [Provider=SQLOLEDB.1;Integrated Security=SSPI;Initial Catalog=' & CHR(39) & '$(Catalog)' & CHR(39) & ';Data Source=' & CHR(39) & '$(DataSource)' & CHR(39) & ']';
+		ELSEIF (LEN('$(XUserID)') OR LEN('$(XPassword)')) THEN
+			LET Gqvc.DB.v.SQL.ConnectString = 'OLEDB CONNECT$(Driver) TO [Provider=SQLOLEDB.1;User ID=' & CHR(39) & '$(XUserID)' & CHR(39) & ';Initial Catalog=' & CHR(39) & '$(Catalog)' & CHR(39) & ';Data Source=' & CHR(39) & '$(DataSource)' & CHR(39) & '] (XPassword is $(XPassword))';
+		ELSE
+			TRACE Gqvc.GetDataDictionaryFromSqlDB: OLEDB connection supports only integrated security or user name with encrypted password.;
+			CALL Gqvc.LogError('Gqvc.GetDataDictionaryFromSqlDB: OLEDB connection supports only integrated security or user name with encrypted password.');
 		END IF
+	ELSEIF '$(ConnectionType)'='ODBC' THEN
+		LET Gqvc.DB.v.SQL.ConnectString = '$(ConnectionType) CONNECT TO ' & CHR(39) & '$(DataSource)' & CHR(39) & ' (XUserId is $(XUserID), XPassword is $(XPassword))';
+				
+	ENDIF	
+
+	// Disable error mode
+	SET ErrorMode = 0;
+	
+	// Connect to DB
+	$(Gqvc.DB.v.SQL.ConnectString);
+	
+	IF ScriptError>0 THEN
+		LET Gqvc.DB.v.SQL.ScriptError = SUBFIELD(ScriptErrorList,CHR(10),SUBSTRINGCOUNT(ScriptErrorList,CHR(10)));
+		TRACE Gqvc.GetDataDictionaryFromSqlDB: Error during DB connection - $(DataSource).; 
+		CALL Gqvc.LogError('Gqvc.GetDataDictionaryFromSqlDB: Error during DB connection - [$(DataSource)].');
+		//CALL Gqvc.LogError('Gqvc.GetDataDictionaryFromSqlDB: Error raised, exiting sub.');
+		EXIT SUB;
+	
+	ELSE
+		TRACE Gqvc.GetDataDictionaryFromSqlDB: Connected to [$(DataSource)].; 
+		CALL Gqvc.LogInformation('Gqvc.GetDataDictionaryFromSqlDB: Connected to [$(DataSource)].');	
+	
+	ENDIF 
+
+	// Get DB list
+	[SQLDB]:
+	SELECT NAME AS [DB Name],DATABASE_ID AS [DB ID] FROM SYS.DATABASES;
+	
+	//DISCONNECT;
+	IF NOOFROWS('SQLDB') THEN
+	
+		FOR i=0 to NOOFROWS('SQLDB')-1
+			LET Gqvc.DB.v.SQL.CatalogName = PEEK('DB Name',i,'SQLDB');
+	
+			IF WILDMATCH('$(Gqvc.DB.v.SQL.CatalogName)','*')>0 THEN // For loading specific catalogs
+			
+				[Gqvc.SQLDataDictionary]:
+				LOAD 
+					*,
+					DUAL([Gqvc.SQL.ColumnName],ROWNO()) AS [Gqvc.SQL.ColumnByLoadOrder]
+				;
+				SQL 
+				SELECT  
+			        '$(DataSource)' AS [Gqvc.SQL.DataSource], // Added @ 13052019
+			        '$(Gqvc.DB.v.SQL.CatalogName)' AS [Gqvc.SQL.CatalogName],
+			        SCH.NAME AS [Gqvc.SQL.SchemaName],
+					OBJ.[NAME] AS [Gqvc.SQL.TableName],
+					COL.NAME AS [Gqvc.SQL.ColumnName],
+			        TYP.NAME AS [Gqvc.SQL.DataType],
+			        COL.MAX_LENGTH AS [Gqvc.SQL.Size],
+			        CAST(COL.PRECISION AS VARCHAR) +'/'+ CAST(COL.SCALE AS VARCHAR) AS [Gqvc.SQL.PrecisionScale],
+					OBJ.TYPE_DESC AS [Gqvc.SQL.Type]					
+				FROM 
+					[$(Gqvc.DB.v.SQL.CatalogName)].[SYS].[ALL_OBJECTS] OBJ
+					INNER JOIN [$(Gqvc.DB.v.SQL.CatalogName)].[SYS].[ALL_COLUMNS] COL	ON OBJ.OBJECT_ID = COL.OBJECT_ID
+					INNER JOIN [$(Gqvc.DB.v.SQL.CatalogName)].[SYS].[TYPES] TYP			ON COL.USER_TYPE_ID = TYP.USER_TYPE_ID
+					INNER JOIN [$(Gqvc.DB.v.SQL.CatalogName)].[SYS].[SCHEMAS] SCH		ON OBJ.SCHEMA_ID = SCH.SCHEMA_ID
+					INNER JOIN [$(Gqvc.DB.v.SQL.CatalogName)].[SYS].[OBJECTS] SOB		ON SOB.OBJECT_ID = OBJ.OBJECT_ID
+				WHERE 
+					OBJ.TYPE_DESC IN ('USER_TABLE','VIEW')
+					AND SOB.TYPE IN ('U','V');			
+				
+				IF ScriptError>0 THEN
+					LET Gqvc.DB.v.SQL.ScriptError = LEFT(SUBFIELD(ScriptErrorList,CHR(10),SubStringCount(ScriptErrorList,CHR(10))),LEN(SUBFIELD(ScriptErrorList,CHR(10),SubStringCount(ScriptErrorList,CHR(10))))-1);//SUBFIELD(ScriptErrorList,CHR(10),SUBSTRINGCOUNT(ScriptErrorList,CHR(10)));
+					TRACE Gqvc.GetDataDictionaryFromSqlDB: Error scanning [$(Gqvc.DB.v.SQL.CatalogName)] - $(Gqvc.DB.v.SQL.ScriptError).;
+					//CALL Gqvc.LogError('Gqvc.GetDataDictionaryFromSqlDB: Error scanning $(Gqvc.DB.v.SQL.CatalogName) - $(Gqvc.DB.v.SQL.ScriptError).');
+					CALL Gqvc.LogError('Gqvc.GetDataDictionaryFromSqlDB: Error scanning [$(Gqvc.DB.v.SQL.CatalogName)].');
+				END IF
+				
+			END IF
 		
-		[Object Info]:
-		SELECT  T.NAME AS [Object Name], C.NAME AS [COLUMN NAME], P.NAME AS [DATA TYPE], P.MAX_LENGTH AS[SIZE],   
-				CAST(P.PRECISION AS VARCHAR) +'/'+ CAST(P.SCALE AS VARCHAR) AS [PRECISION/SCALE]
-		FROM SYS.OBJECTS AS T
-			JOIN SYS.COLUMNS AS C
-			ON T.OBJECT_ID=C.OBJECT_ID
-			JOIN SYS.TYPES AS P
-			ON C.SYSTEM_TYPE_ID=P.SYSTEM_TYPE_ID
-		WHERE T.TYPE_DESC IN ('USER_TABLE','VIEW');				
+		NEXT
+	
+	ELSE
+		TRACE Gqvc.GetDataDictionaryFromSqlDB: Permission or read error [SYS.DATABASES] from [$(DataSource)];
+		CALL Gqvc.LogError('Gqvc.GetDataDictionaryFromSqlDB: Permission or read error [SYS.DATABASES] from [$(DataSource)].');
+	END IF
+	
+	CALL Gqvc.DropTable('SQLDB'); 
+
+	SET ErrorMode = 1;
+	// Clean up
+	SET Gqvc.DB.v.SQL.ConnectString =;
+	SET Gqvc.DB.v.SQL.ScriptError =;
+	SET Gqvc.DB.v.SQL.CatalogName =;
+	SET i=;
+	
+END SUB
+// ****************************** End Sub ****************************** 
+///$tab Data Extract
+// ****************************** Start Sub ****************************** 
+/* 
+Captures data extract logs. 
+
+@param 1 String. Name of the data table for which the stats are being recorded 
+@param 2 Number. Records extracted in this run 
+@param 3 Number. Records in QVD at the end of this run 
+@param 4 Float. Extract start timestamp, in numeric format 
+@param 5 Float. Extract end timestamp, in numeric format
+@param 6 String. Extract mode
+
+@syntax CALL Gqvc.LogTableAudit('DataTableName','RecordsThisRun','NoOfRecords','StartTime','EndTime','ExtractMode'); 
+@Ex. CALL Gqvc.LogTableAudit('Customer','1234','11234','43644.999965278','43645.000648148','Delta'); 
+*/ 
+
+SUB Gqvc.LogTableAudit(TableName,RecordsThisRun,NoOfRecords,StartTime,EndTime,ExtractMode)
+	[$(Gqvc.v.Extract.LogQVD)]:
+    LOAD
+        '$(Gqvc.v.Extract.RunID)' AS [Run ID]
+        ,'$(TableName)' AS [Table Name]
+        ,'$(RecordsThisRun)' AS [No of Records Extracted]
+        ,'$(NoOfRecords)' AS [Total No of Records]
+        ,TIMESTAMP('$(StartTime)') AS [Start Time]
+        ,TIMESTAMP('$(EndTime)') AS [End Time]
+        ,'$(ExtractMode)' AS [Run Mode]
+    AUTOGENERATE 1;        
+END SUB
+// ****************************** End Sub ****************************** 
+
+
+// ****************************** Start Sub ****************************** 
+// Initialises timestamp for upper water mark required for delta extract.
+SUB Gqvc.InitialiseCutOffTS
+	LET Gqvc.v.Extract.CutOffTS = NUM(NOW());
+END SUB
+// ****************************** End Sub ****************************** 
+
+// ****************************** Start Sub ****************************** 
+/* 
+Initialises data extract stats. 
+
+@param 1 String. Path where extract stats qvd is saved. Allows continuity of logs.
+@param 2 String. Name of the extract log qvd 
+
+@syntax CALL Gqvc.InitialiseStats('ExtractLogPath','ExtractLogQVD'); 
+@Ex. CALL Gqvc.InitialiseStats('C:\Qlik\Extract\QVDs','Extract Stats'); 
+*/ 
+
+SUB Gqvc.InitialiseStats(ExtractLogPath,ExtractLogQVD)
+	SET Gqvc.v.Extract.RunID =;
+	LET Gqvc.v.Extract.StartTime =  NOW();
+	LET Gqvc.v.Extract.LogQVD = '$(ExtractLogQVD)';
+	IF FILESIZE('$(ExtractLogPath)$(ExtractLogQVD).qvd')>0 THEN
+	    [$(ExtractLogQVD)]:
+	    LOAD * FROM [$(ExtractLogPath)$(ExtractLogQVD).qvd] (QVD);
+	
+		LastRunID:
+		LOAD MAX([Run ID]) AS LastRunID RESIDENT [$(ExtractLogQVD)];
 		
-		IF MATCH(ScriptError,10,11) THEN
-			TRACE SYS.OBJECTS error;
-		END IF
-		
+	    LET Gqvc.v.Extract.RunID = PEEK('LastRunID',0,'LastRunID');
+	    CALL Gqvc.DropTable('LastRunID');
+	    
 	END IF
 
-NEXT
+	LET Gqvc.v.Extract.RunID = IF(ISNUM('$(Gqvc.v.Extract.RunID)'),'$(Gqvc.v.Extract.RunID)',0) + 1;
+	TRACE Run ID: $(Gqvc.v.Extract.RunID);
+	CALL Gqvc.LogInformation('Gqvc.InitialiseStats: Extract Run ID [$(Gqvc.v.Extract.RunID)]');
 
-STORE [DB Information] INTO [DB Information.qvd] (QVD);	
+	CALL Gqvc.InitialiseCutOffTS;
+END SUB
+// ****************************** End Sub ****************************** 
+
+// ****************************** Start Sub ****************************** 
+/* 
+Saves data extract stats to qvd. 
+
+@param 1 String. Path to store extract stats qvd
+@param 2 String. Name of the extract log qvd 
+
+@syntax CALL Gqvc.SaveStats('ExtractLogPath','ExtractLogQVD'); 
+@Ex. CALL Gqvc.SaveStats('C:\Qlik\Extract\QVDs','Extract Stats'); 
+*/ 
+
+SUB Gqvc.SaveStats(ExtractLogPath,ExtractLogQVD)
+	IF NOOFROWS('$(ExtractLogQVD)') THEN
+		//STORE [$(ExtractLogQVD)] INTO [$(ExtractLogPath)$(ExtractLogQVD).qvd](QVD);
+		CALL Gqvc.StoreDataQvd('$(ExtractLogQVD)','$(ExtractLogPath)'); 
+		TRACE Gqvc.SaveStats: Extract logs saved;
+	ELSE
+		TRACE Gqvc.SaveStats: No extract logs to save;
+		CALL Gqvc.LogInformation('Gqvc.SaveStats: No extract logs to save');
+	END IF	
+	SET Gqvc.v.Extract.LogQVD = ;
+	LET Gqvc.v.Extract.EndTime =  NOW();
+END SUB
+// ****************************** End Sub ****************************** 
+
+// ****************************** Start Sub ****************************** 
+// Reset delta extract variables
+SUB Gqvc.ResetExtractConfig
+	SET Gqvc.v.Extract.DBTimestamp=;
+	SET Gqvc.v.Stats.StartTime=;
+	SET Gqvc.v.Extract.ExtractMode=;
+	SET Gqvc.v.Extract.ExtractType=;
+	SET Gqvc.v.Extract.DBTimestampFile=;
+	SET Gqvc.v.Stats.EndTime=;
+	SET Gqvc.v.Extract.NoOfRecords=;
+	SET Gqvc.v.Extract.NoOfRecordsThisRun=;
+	SET Gqvc.v.Extract.PK=;
+	SET Gqvc.v.Extract.WhereCondition=;
+	SET Gqvc.v.Load.PrimaryKey=;
+	SET Gqvc.v.Load.TableName=;
+	SET Gqvc.v.Load.TimeStamp=;
+	SET Gqvc.v.Load.TimeStampFieldFormat=;
+	SET Gqvc.v.Extract.NoOfRecordsInQvd=;
+	SET Gqvc.v.Extract.TableQVD=;
+	SET Gqvc.v.Load.NoOfPKRecords=;
+	SET Gqvc.v.Load.NoOfDeltaRecords=;
+	SET Gqvc.v.Load.NoOfCheckedRecords=;
+	SET Gqvc.v.Load.DeletedRecordCheck=;
+	SET Gqvc.v.Extract.DeletedRecordCheck=;
+	SET Gqvc.v.Extract.EmptyTableSaved=;
 	
+	CALL Gqvc.DropTable('$(TableName).PK');
+	CALL Gqvc.DropTable('$(TableName).Delta');
+END SUB
+// ****************************** End Sub ****************************** 
+
+// ****************************** Start Sub ****************************** 
+/* 
+Ground work for extract Should be called before data pull.. 
+
+@param 1 String. Name of the data table which is being extracted 
+@param 2 String. Directory to store extracted QVD 
+@param 3 String, Optional. Primary key or unique ID of the table. If omitted no unique or deleted records check is done. 
+@param 4 String, Optional. Name of the timestamp field which allows to fetch delta records. If omitted, full data load is performed. 
+@param 5 String, Optional. Helper argument to generate WHERE clause dynamically. E.g., 'SQL.VARCHAR' will hint the routine, DB is SQL Server and datatype of TS is varchar.
+@param 6 String, Optional. If deleted records are to be checked use 'Yes'. To effectively use this argument, user must extract all primary keys of the source table in '<TableName>.PK' with only field as '<PrimaryKey>.PK'.
+
+@syntax CALL Gqvc.InitialiseExtract('DataTableName','SavePath',['PrimaryKey'],['DateTimeField'],['DB.DataType'],['DeletedRecordCheck']); 
+@Ex. CALL Gqvc.InitialiseExtract('Customer','C:\Qlik\Extract\QVDs',['CustomerUID'],['LastUpdated'],['ORA'],['Yes']);  
+*/ 
+
+SUB Gqvc.InitialiseExtract(TableName,SavePath,PrimaryKey,DateTimeField,TSFieldFormat,DeletedRecordCheck)
+	IF LEN('$(DateTimeField)') THEN
+		LET Gqvc.v.Extract.DBTimestampFile = '$(SavePath)' & '$(TableName)' & '.DBTimestamp';
+
+		IF FILESIZE('$(Gqvc.v.Extract.DBTimestampFile).qvd') THEN
+			[$(TableName).DBTimestamp]:
+			LOAD DBTimestamp FROM [$(Gqvc.v.Extract.DBTimestampFile).qvd] (QVD);
+			
+			LET Gqvc.v.Extract.DBTimestamp = NUM(PEEK('DBTimestamp',0,'$(TableName).DBTimestamp'));
+			LET Gqvc.v.Extract.ExtractMode = 'Delta';
+			LET Gqvc.v.Extract.ExtractType = 'Delta';
+			CALL Gqvc.DropTable('$(TableName).DBTimestamp');
+			
+			
+			IF NOT ISNUM($(Gqvc.v.Extract.DBTimestamp)) OR LEN('$(Gqvc.v.Extract.DBTimestamp)')=0 THEN
+	    		LET Gqvc.v.Extract.DBTimestamp = NUM(MAKEDATE(1970,1,1));
+	        END IF
 	
-END SUB 
+		ELSE 
+			LET Gqvc.v.Extract.DBTimestamp = NUM(MAKEDATE(1970,1,1));
+			LET Gqvc.v.Extract.ExtractMode = 'Delta';
+			LET Gqvc.v.Extract.ExtractType = 'Full';
+		END IF	
+	END IF	
+		
+	LET Gqvc.v.Stats.StartTime = NUM(NOW());
+	
+	// Create where condition for SQL server or Oracle
+	IF LEN('$(DateTimeField)') THEN
+		IF LEN('$(TSFieldFormat)') THEN
+			IF SUBFIELD('$(TSFieldFormat)','.',1)='SQL' THEN
+				LET Gqvc.v.Extract.WhereCondition = 'WHERE CONVERT('& SUBFIELD('$(TSFieldFormat)','.',2) & ',[$(DateTimeField)],120) >= ' & CHR(39) & TIMESTAMP($(Gqvc.v.Extract.DBTimestamp),'YYYY-MM-DD hh:mm:ss') & CHR(39) & ' AND CONVERT('& SUBFIELD('$(TSFieldFormat)','.',2) & ',[$(DateTimeField)],120) < ' & CHR(39) & TIMESTAMP($(Gqvc.v.Extract.CutOffTS),'YYYY-MM-DD hh:mm:ss') & CHR(39);
+			
+			ELSEIF 	SUBFIELD('$(TSFieldFormat)','.',1)='ORA' THEN
+				LET Gqvc.v.Extract.WhereCondition = 'WHERE TO_TIMESTAMP([$(DateTimeField)],' & CHR(39) & 'YYYY-MM-DD HH:MI:SS' & CHR(39) & ') >= ' & CHR(39) & TIMESTAMP($(Gqvc.v.Extract.DBTimestamp),'YYYY-MM-DD hh:mm:ss') & CHR(39) & ' AND TO_TIMESTAMP([$(DateTimeField)],' & CHR(39) & 'YYYY-MM-DD HH:MI:SS' & CHR(39) & ') < ' & CHR(39) & TIMESTAMP($(Gqvc.v.Extract.CutOffTS),'YYYY-MM-DD hh:mm:ss') & CHR(39);
+			END IF
+		
+		ELSE
+			LET Gqvc.v.Extract.WhereCondition = 'WHERE [$(DateTimeField)] >= ' & CHR(39) & TIMESTAMP($(Gqvc.v.Extract.DBTimestamp),'YYYY-MM-DD hh:mm:ss') & CHR(39) & ' AND [$(DateTimeField)] < ' & CHR(39) & TIMESTAMP($(Gqvc.v.Extract.CutOffTS),'YYYY-MM-DD hh:mm:ss') & CHR(39);
+			
+		END IF
+	ELSE
+		LET Gqvc.v.Extract.ExtractMode = 'Full';
+		LET Gqvc.v.Extract.ExtractType = 'Full';
+		LET Gqvc.v.Extract.WhereCondition = '';
+	END IF
+	
+	IF LEN(TRIM('$(DeletedRecordCheck)')) AND MIXMATCH('$(DeletedRecordCheck)','Yes') THEN
+		SET Gqvc.v.Extract.DeletedRecordCheck = 'Yes';
+	ELSE
+		SET Gqvc.v.Extract.DeletedRecordCheck = 'No';
+	END IF
+	
+END SUB
+// ****************************** End Sub ****************************** 
+
+// ****************************** Start Sub ****************************** 
+/* 
+Finalise extract. Performs full or delta load based. Saves watermark based on data and not when the extract was run. Commits data to qvd.
+
+@param 1 String. Name of the data table which is being extracted 
+@param 2 String. Directory to store extracted QVD 
+@param 3 String, Optional. Primary key or unique ID of the table. If omitted no unique or deleted records check is done. 
+@param 4 String, Optional. Name of the timestamp field which allows to fetch delta records. If omitted, full data load is performed. 
+
+@syntax CALL Gqvc.FinaliseExtract('DataTableName','SavePath',['PrimaryKey'],['DateTimeField']); 
+@Ex. CALL Gqvc.FinaliseExtract('Customer','C:\Qlik\Extract\QVDs',['CustomerUID'],['LastUpdated']);  
+*/
+
+SUB Gqvc.FinaliseExtract(TableName,SavePath,PrimaryKey,DateTimeField)
+	LET Gqvc.v.Extract.TableQVD = '$(SavePath)' & '$(TableName)';
+	SET Gqvc.v.Extract.EmptyTableSaved = 'No';
+	
+	IF NOOFROWS('$(TableName)') THEN
+		IF MIXMATCH('$(Gqvc.v.Extract.ExtractMode)','Delta') AND LEN('$(PrimaryKey)')>0 THEN
+			LET Gqvc.v.Extract.PK = 'HASH256($(PrimaryKey)) AS [$(PrimaryKey).HID],';
+			
+			[$(TableName).Delta]:
+			NOCONCATENATE
+			LOAD $(Gqvc.v.Extract.PK) * RESIDENT [$(TableName)];	
+			
+			CALL Gqvc.DropTable('$(TableName)');
+	
+			// Store timestamp
+			[$(TableName).DBTimestamp]:
+			LOAD TIMESTAMP(MAX([$(DateTimeField)])) AS DBTimestamp RESIDENT [$(TableName).Delta];
+			
+			CALL Gqvc.StoreDropDataQvd('$(TableName).DBTimestamp', '$(SavePath)');
+			//STORE [$(TableName).DBTimestamp] INTO [$(Gqvc.v.Extract.DBTimestampFile).qvd] (QVD);
+			//CALL Gqvc.DropTable('$(TableName).DBTimestamp');
+			
+			// Get stats
+			LET Gqvc.v.Extract.NoOfRecordsThisRun = NOOFROWS('$(TableName).Delta');
+			
+			// Merge old data
+			IF FILESIZE('$(Gqvc.v.Extract.TableQVD).qvd') THEN
+				LET Gqvc.v.Extract.NoOfRecordsInQvd = QVDNOOFRECORDS('$(Gqvc.v.Extract.TableQVD).qvd'); // Added to capture QVD stats
+				
+				CONCATENATE ([$(TableName).Delta])
+				LOAD * FROM [$(Gqvc.v.Extract.TableQVD).qvd] (QVD) WHERE NOT EXISTS([$(PrimaryKey).HID]);
+			END IF					
+		
+		ELSEIF MIXMATCH('$(Gqvc.v.Extract.ExtractMode)','Delta') AND LEN('$(PrimaryKey)')=0 THEN 
+			RENAME TABLE [$(TableName)] TO [$(TableName).Delta];			
+			
+			[$(TableName).DBTimestamp]:
+			LOAD TIMESTAMP(MAX([$(DateTimeField)])) AS DBTimestamp RESIDENT [$(TableName).Delta];
+			
+			CALL Gqvc.StoreDropDataQvd('$(TableName).DBTimestamp', '$(SavePath)');
+			//STORE [$(TableName).DBTimestamp] INTO [$(Gqvc.v.Extract.DBTimestampFile).qvd] (QVD);
+			//CALL Gqvc.DropTable('$(TableName).DBTimestamp');
+			
+			// Get stats
+			LET Gqvc.v.Extract.NoOfRecordsThisRun = NOOFROWS('$(TableName).Delta');		
+						
+			IF FILESIZE('$(Gqvc.v.Extract.TableQVD).qvd') THEN
+				LET Gqvc.v.Extract.NoOfRecordsInQvd = QVDNOOFRECORDS('$(Gqvc.v.Extract.TableQVD).qvd'); // Added to capture QVD stats
+				
+				CONCATENATE ([$(TableName).Delta])
+				LOAD * FROM [$(Gqvc.v.Extract.TableQVD).qvd] (QVD);	
+			
+			ELSE
+				LET Gqvc.v.Extract.NoOfRecordsInQvd = 0; // Added to capture QVD stats	
+									
+			END IF	
+		
+		ELSE
+			RENAME TABLE [$(TableName)] TO [$(TableName).Delta];
+	
+			// Get stats
+			LET Gqvc.v.Extract.NoOfRecordsThisRun = NOOFROWS('$(TableName).Delta');	
+			LET Gqvc.v.Extract.NoOfRecordsInQvd = 0; // Added to capture QVD stats		
+			
+		END IF
+	ELSE
+
+		LET Gqvc.v.Extract.NoOfRecordsThisRun = 0;
+		
+		// Handle empty tables
+		IF FILESIZE('$(Gqvc.v.Extract.TableQVD).qvd') THEN
+			TRACE Gqvc.FinaliseExtract: No changed data to save [$(TableName)];
+			CALL Gqvc.LogInformation('Gqvc.FinaliseExtract: No changed data to save [$(TableName)]');
+			SET Gqvc.v.Extract.EmptyTableSaved = 'NA';
+			CALL Gqvc.DropTable('$(TableName)');			
+		ELSE
+			LET Gqvc.v.Extract.NoOfRecordsInQvd = 0; // Added to capture QVD stats
+		END IF
+
+		// If table exists at this point, empty structure can be saved
+		IF TABLENUMBER('$(TableName)') THEN
+			TRACE Gqvc.FinaliseExtract: Saving empty structure [$(TableName)];
+			CALL Gqvc.LogInformation('Gqvc.FinaliseExtract: Saving empty structure [$(TableName)]');
+			
+			//STORE [$(TableName)] INTO [$(Gqvc.v.Extract.TableQVD).qvd] (QVD);
+			//CALL Gqvc.DropTable('$(TableName)');
+			SET Gqvc.v.Extract.EmptyTableSaved = 'Yes';
+			CALL Gqvc.StoreDropDataQvd('$(TableName)', '$(SavePath)');
+			
+		END IF
+
+	END IF	
+
+	IF NOOFROWS('$(TableName).Delta') AND MIXMATCH('$(Gqvc.v.Extract.EmptyTableSaved)','No') THEN
+		LET Gqvc.v.Extract.NoOfRecords = NOOFROWS('$(TableName).Delta');
+		LET Gqvc.v.Extract.NoOfRecordsInQvd = 0;
+		
+		IF LEN('$(PrimaryKey)')>0 AND TABLENUMBER('$(TableName).PK') AND NOOFROWS('$(TableName).PK') THEN
+		
+			LET Gqvc.v.Load.NoOfPKRecords = NOOFROWS('$(TableName).PK');
+			LET Gqvc.v.Load.NoOfDeltaRecords = NOOFROWS('$(TableName).Delta');
+		
+			[$(TableName).Delta.DeletedCheck]:
+			NOCONCATENATE
+			LOAD * RESIDENT [$(TableName).Delta]
+			WHERE EXISTS([$(PrimaryKey).PK],[$(PrimaryKey)]);
+			
+			LET Gqvc.v.Load.NoOfCheckedRecords = IF(TABLENUMBER('$(TableName).Delta.DeletedCheck'),NOOFROWS('$(TableName).Delta.DeletedCheck'),0);
+			
+			IF $(Gqvc.v.Load.NoOfPKRecords) = $(Gqvc.v.Load.NoOfCheckedRecords) THEN
+				LET Gqvc.v.Extract.NoOfRecords = NOOFROWS('$(TableName).Delta.DeletedCheck');
+				
+				CALL Gqvc.StoreDropDataQvd('$(TableName).Delta.DeletedCheck', '$(SavePath)', '$(TableName)');
+				//STORE [$(TableName).Delta.DeletedCheck] INTO [$(Gqvc.v.Extract.TableQVD).qvd] (QVD);
+				//CALL Gqvc.DropTable('$(TableName).Delta.DeletedCheck');
+				CALL Gqvc.DropTable('$(TableName).Delta');
+				
+				
+			ELSE
+				TRACE Gqvc.FinaliseExtract: Delete check failed. Records before [$(Gqvc.v.Load.NoOfDeltaRecords)], after [$(Gqvc.v.Load.NoOfCheckedRecords)], PK [$(Gqvc.v.Load.NoOfPKRecords)];
+				TRACE Gqvc.FinaliseExtract: Check for valid unique key constraint. Delta data will be saved with no changes.;
+				CALL Gqvc.LogWarning('Gqvc.FinaliseExtract: Delete check failed. Check for unique key constraint [$(TableName)].');
+				CALL Gqvc.LogWarning('Gqvc.FinaliseExtract: Records before [$(Gqvc.v.Load.NoOfDeltaRecords)] after [$(Gqvc.v.Load.NoOfCheckedRecords)] PK [$(Gqvc.v.Load.NoOfPKRecords)]');				
+				CALL Gqvc.LogWarning('Gqvc.FinaliseExtract: Delta data will be saved with no changes [$(TableName)]');
+				
+				CALL Gqvc.StoreDropDataQvd('$(TableName).Delta', '$(SavePath)', '$(TableName)');
+				//STORE [$(TableName).Delta] INTO [$(Gqvc.v.Extract.TableQVD).qvd] (QVD);
+				//CALL Gqvc.DropTable('$(TableName).Delta');
+				CALL Gqvc.DropTable('$(TableName).Delta.DeletedCheck');
+				
+			END IF
+		
+		ELSE 
+			CALL Gqvc.StoreDropDataQvd('$(TableName).Delta', '$(SavePath)', '$(TableName)');
+			//STORE [$(TableName).Delta] INTO [$(Gqvc.v.Extract.TableQVD).qvd] (QVD);
+			//CALL Gqvc.DropTable('$(TableName).Delta');
+				
+		END IF
+	
+	ELSEIF MIXMATCH('$(Gqvc.v.Extract.DeletedRecordCheck)','Yes') AND MIXMATCH('$(Gqvc.v.Extract.EmptyTableSaved)','No') THEN
+		IF LEN('$(PrimaryKey)')>0 AND TABLENUMBER('$(TableName).PK') AND NOOFROWS('$(TableName).PK') THEN
+		
+			LET Gqvc.v.Load.NoOfPKRecords = NOOFROWS('$(TableName).PK');
+			LET Gqvc.v.Load.NoOfDeltaRecords = 0;
+		
+			[$(TableName).Delta.DeletedCheck]:
+			NOCONCATENATE
+			LOAD * FROM [$(Gqvc.v.Extract.TableQVD).qvd] (QVD)
+			WHERE EXISTS([$(PrimaryKey).PK],[$(PrimaryKey)]);
+			
+			LET Gqvc.v.Load.NoOfCheckedRecords = IF(TABLENUMBER('$(TableName).Delta.DeletedCheck'),NOOFROWS('$(TableName).Delta.DeletedCheck'),0);
+			
+			IF $(Gqvc.v.Load.NoOfPKRecords) = $(Gqvc.v.Load.NoOfCheckedRecords) THEN
+				LET Gqvc.v.Extract.NoOfRecordsInQvd = NOOFROWS('$(TableName).Delta.DeletedCheck');
+				
+				CALL Gqvc.StoreDropDataQvd('$(TableName).Delta.DeletedCheck', '$(SavePath)', '$(TableName)');
+				//STORE [$(TableName).Delta.DeletedCheck] INTO [$(Gqvc.v.Extract.TableQVD).qvd] (QVD);				
+				//CALL Gqvc.DropTable('$(TableName).Delta.DeletedCheck');
+								
+			ELSE
+				TRACE Gqvc.FinaliseExtract: Delete check failed. Records before [$(Gqvc.v.Load.NoOfDeltaRecords)], after [$(Gqvc.v.Load.NoOfCheckedRecords)], PK [$(Gqvc.v.Load.NoOfPKRecords)];
+				TRACE Gqvc.FinaliseExtract: Check for valid unique key constraint. Delta data will not be saved [$(TableName)].;
+				CALL Gqvc.LogWarning('Gqvc.FinaliseExtract: Delete check failed. Check for unique key constraint [$(TableName)].');
+				CALL Gqvc.LogWarning('Gqvc.FinaliseExtract: Records before [$(Gqvc.v.Load.NoOfDeltaRecords)] after [$(Gqvc.v.Load.NoOfCheckedRecords)] PK [$(Gqvc.v.Load.NoOfPKRecords)]');				
+				CALL Gqvc.LogWarning('Gqvc.FinaliseExtract: Delta data will not be saved [$(TableName)]');
+				CALL Gqvc.DropTable('$(TableName).Delta.DeletedCheck');
+			END IF
+		
+		ELSE 
+			//STORE [$(TableName).Delta] INTO [$(Gqvc.v.Extract.TableQVD).qvd] (QVD);
+			CALL Gqvc.StoreDropDataQvd('$(TableName).Delta', '$(SavePath)', '$(TableName)');
+			//CALL Gqvc.DropTable('$(TableName).Delta');	
+		END IF
+	
+	ELSEIF MIXMATCH('$(Gqvc.v.Extract.EmptyTableSaved)','NA') AND FILESIZE('$(Gqvc.v.Extract.TableQVD).qvd') THEN
+		LET Gqvc.v.Extract.NoOfRecords = 0;
+		LET Gqvc.v.Extract.NoOfRecordsInQvd = QVDNOOFRECORDS('$(Gqvc.v.Extract.TableQVD).qvd');
+	
+	ELSE
+		LET Gqvc.v.Extract.NoOfRecords = 0;
+		LET Gqvc.v.Extract.NoOfRecordsInQvd = 0;
+		
+	END IF
+	
+	LET Gqvc.v.Extract.NoOfRecords = RANGEMAX($(Gqvc.v.Extract.NoOfRecordsInQvd),$(Gqvc.v.Extract.NoOfRecords)); // To store stats of QVD when no records are fetched during the run.
+	
+	LET Gqvc.v.Stats.EndTime = NUM(NOW());
+	CALL Gqvc.LogTableAudit('$(TableName)','$(Gqvc.v.Extract.NoOfRecordsThisRun)','$(Gqvc.v.Extract.NoOfRecords)','$(Gqvc.v.Stats.StartTime)','$(Gqvc.v.Stats.EndTime)','$(Gqvc.v.Extract.ExtractType)');
+	CALL Gqvc.ResetExtractConfig;
+END SUB
+// ****************************** End Sub ****************************** 
+///$tab HTML Tags
+/* 
+	Character code set for HTML symbols.
+	This is an extensive list, albiet not complete, should allow conversion of most latin characters. 
+*/
+
+Gqvc.HTML.Symbol:
+LOAD *;
+LOAD * INLINE [
+    Gqvc.HTML.Decimal, Gqvc.HTML.Character, Gqvc.HTML.Symbol, Gqvc.HTML.Description
+    &#160;, &nbsp;, , no-break space
+    &#161;, &iexcl;, ¡, inverted exclamation mark
+    &#162;, &cent;, ¢, cent sign
+    &#163;, &pound;, £, pound sign
+    &#164;, &curren;, ¤, currency sign
+    &#165;, &yen;, ¥, yen sign = yuan sign
+    &#166;, &brvbar;, ¦, broken bar = brolen vertical bar
+    &#167;, &sect;, §, section sign
+    &#168;, &uml;, ¨, diaeresis = spacing diaeresis
+    &#169;, &copy;, ©, copyright sign
+    &#170;, &ordf;, ª, feminine ordinal indicator
+    &#171;, &laquo;, «, left-pointing double angle quotation mark = left pointing guillemet
+    &#172;, &not;, ¬, not sign = discretionary hyphen
+    &#173;, &shy;, ­, soft hyphen = discretionary hyphen
+    &#174;, &reg;, ®, registered sign = registered trade mark sign
+    &#175;, &macr;, ¯, macron = spacing macron = overline = APL overbar
+    &#176;, &deg;, °, degree sign
+    &#177;, &plusmn;, ±, plus-minus sign = plus-or-minus sign
+    &#178;, &sup2;, ², superscript two = superscript digit two = squared
+    &#179;, &sup3;, ³, superscript three = superscript digit three = cubed
+    &#180;, &acute;, "´", acute accent = spacing acute
+    &#181;, &micro;, µ, micro sign
+    &#182;, &para;, ¶, pilcrow sign = paragraph sign
+    &#183;, &middot;, ·, middle dot = Georgian comma = Greek middle dot
+    &#184;, &ccedil;, ¸, cedilla = spacing cedilla
+    &#185;, &sup1;, ¹, superscript one = superscript digit one
+    &#186;, &ordm;, º, masculine ordinal indicator
+    &#187;, &raquo;, », right-pointing double angle quotation mark = right pointing guillemet
+    &#188;, &frac14;, ¼, vulgar fraction one quarter = fraction one quarter
+    &#189;, &frac12;, ½, vulgar fraction one half = fraction one half
+    &#190;, &frac34;, ¾, vulgar fraction three quarters = fraction three quarters
+    &#191;, &iquest;, ¿, inverted question mark = turned question mark
+    &#192;, &Agrave;, À, latin capital letter A with grave = latin capital letter A grave
+    &#193;, &Aacute;, Á, latin capital letter A with acute
+    &#194;, &Acirc;, Â, latin capital letter A with circumflex
+    &#195;, &Atilde;, Ã, latin capital letter A with tilde
+    &#196;, &Auml;, Ä, latin capital letter A with diaeresis
+    &#197;, &Aring;, Å, latin capital letter A with ring above = latin capital letter A ring
+    &#198;, &AElig;, Æ, latin capital letter AE = latin capital ligature AE
+    &#199;, &Ccedil;, Ç, latin capital letter C with cedilla
+    &#200;, &Egrave;, È, latin capital letter E with grave
+    &#201;, &Eacute;, É, latin capital letter E with acute
+    &#202;, &Ecirc;, Ê, latin capital letter E with circumflex
+    &#203;, &Euml;, Ë, latin capital letter E with diaeresis
+    &#204;, &Igrave;, Ì, latin capital letter I with grave
+    &#205;, &Iacute;, Í, latin capital letter I with acute
+    &#206;, &Icirc;, Î, latin capital letter I with circumflex
+    &#207;, &Iuml;, Ï, latin capital letter I with diaeresis
+    &#208;, &ETH;, Ð, latin capital letter ETH
+    &#209;, &Ntilde;, Ñ, latin capital letter N with tilde
+    &#210;, &Ograve;, Ò, latin capital letter O with grave
+    &#211;, &Oacute;, Ó, latin capital letter O with acute
+    &#212;, &Ocirc;, Ô, latin capital letter O with circumflex
+    &#213;, &Otilde;, Õ, latin capital letter O with tilde
+    &#214;, &Ouml;, Ö, latin capital letter O with diaeresis
+    &#215;, &times;, ×, multiplication sign
+    &#216;, &Oslash;, Ø, latin capital letter O with stroke = latin capital letter O slash
+    &#217;, &Ugrave;, Ù, latin capital letter U with grave
+    &#218;, &Uacute;, Ú, latin capital letter U with acute
+    &#219;, &Ucirc;, Û, latin capital letter U with circumflex
+    &#220;, &Uuml;, Ü, latin capital letter U with diaeresis
+    &#221;, &Yacute;, Ý, latin capital letter Y with acute
+    &#222;, &THORN;, Þ, latin capital letter THORN
+    &#223;, &szlig;, ß, latin small letter sharp s = ess-zed
+    &#224;, &agrave;, à, latin small letter a with grave = latin small letter a grave
+    &#225;, &aacute;, á, latin small letter a with acute
+    &#226;, &acirc;, â, latin small letter a with circumflex
+    &#227;, &atilde;, ã, latin small letter a with tilde
+    &#228;, &auml;, ä, latin small letter a with diaeresis
+    &#229;, &aring;, å, latin small letter a with ring above = latin small letter a ring
+    &#230;, &aelig;, æ, latin small letter ae = latin small ligature ae
+    &#231;, &ccedil;, ç, latin small letter c with cedilla
+    &#232;, &egrave;, è, latin small letter e with grave
+    &#233;, &eacute;, é, latin small letter e with acute
+    &#234;, &ecirc;, ê, latin small letter e with circumflex
+    &#235;, &euml;, ë, latin small letter e with diaeresis
+    &#236;, &igrave;, ì, latin small letter i with grave
+    &#237;, &iacute;, í, latin small letter i with acute
+    &#238;, &icirc;, î, latin small letter i with circumflex
+    &#239;, &iuml;, ï, latin small letter i with diaeresis
+    &#240;, &eth;, ð, latin small letter eth
+    &#241;, &ntilde;, ñ, latin small letter n with tilde
+    &#242;, &ograve;, ò, latin small letter o with grave
+    &#243;, &oacute;, ó, latin small letter o with acute
+    &#244;, &ocirc;, ô, latin small letter o with circumflex
+    &#245;, &otilde;, õ, latin small letter o with tilde
+    &#246;, &ouml;, ö, latin small letter o with diaeresis
+    &#247;, &divide;, ÷, division sign
+    &#248;, &oslash;, ø, latin small letter o with stroke = latin small letter o slash
+    &#249;, &ugrave;, ù, latin small letter u with grave
+    &#250;, &uacute;, ú, latin small letter u with acute
+    &#251;, &ucirc;, û, latin small letter u with circumflex
+    &#252;, &uuml;, ü, latin small letter u with diaeresis
+    &#253;, &yacute;, ý, latin small letter y with acute
+    &#254;, &thorn;, þ, latin small letter thorn with
+    &#255;, &yuml;, ÿ, latin small letter y with diaeresis
+    &#402;, &fnof;, ƒ, latin small f with hook = function = florin
+    &#913;, &Alpha;, Α, greek capital letter alpha
+    &#914;, &Beta;, Β, greek capital letter beta
+    &#915;, &Gamma;, Γ, greek capital letter gamma
+    &#916;, &Delta;, Δ, greek capital letter delta
+    &#917;, &Epsilon;, Ε, greek capital letter epsilon
+    &#918;, &Zeta;, Ζ, greek capital letter zeta
+    &#919;, &Eta;, Η, greek capital letter eta
+    &#920;, &Theta;, Θ, greek capital letter theta
+    &#921;, &Iota;, Ι, greek capital letter iota
+    &#922;, &Kappa;, Κ, greek capital letter kappa
+    &#923;, &Lambda;, Λ, greek capital letter lambda
+    &#924;, &Mu;, Μ, greek capital letter mu
+    &#925;, &Nu;, Ν, greek capital letter nu
+    &#926;, &Xi;, Ξ, greek capital letter xi
+    &#927;, &Omicron;, Ο, greek capital letter omicron
+    &#928;, &Pi;, Π, greek capital letter pi
+    &#929;, &Rho;, Ρ, greek capital letter rho
+    &#931;, &Sigma;, Σ, greek capital letter sigma
+    &#932;, &Tau;, Τ, greek capital letter tau
+    &#933;, &Upsilon;, Υ, greek capital letter upsilon
+    &#934;, &Phi;, Φ, greek capital letter phi
+    &#935;, &Chi;, Χ, greek capital letter chi
+    &#936;, &Psi;, Ψ, greek capital letter psi
+    &#937;, &Omega;, Ω, greek capital letter omega
+    &#945;, &alpha;, α, greek small letter alpha
+    &#946;, &beta;, β, greek small letter beta
+    &#947;, &gamma;, γ, greek small letter gamma
+    &#948;, &delta;, δ, greek small letter delta
+    &#949;, &epsilon;, ε, greek small letter epsilon
+    &#950;, &zeta;, ζ, greek small letter zeta
+    &#951;, &eta;, η, greek small letter eta
+    &#952;, &theta;, θ, greek small letter theta
+    &#953;, &iota;, ι, greek small letter iota
+    &#954;, &kappa;, κ, greek small letter kappa
+    &#955;, &lambda;, λ, greek small letter lambda
+    &#956;, &mu;, μ, greek small letter mu
+    &#957;, &nu;, ν, greek small letter nu
+    &#958;, &xi;, ξ, greek small letter xi
+    &#959;, &omicron;, ο, greek small letter omicron
+    &#960;, &pi;, π, greek small letter pi
+    &#961;, &rho;, ρ, greek small letter rho
+    &#962;, &sigmaf;, ς, greek small letter final sigma
+    &#963;, &sigma;, σ, greek small letter sigma
+    &#964;, &tau;, τ, greek small letter tau
+    &#965;, &upsilon;, υ, greek small letter upsilon
+    &#966;, &phi;, φ, greek small letter phi
+    &#967;, &chi;, χ, greek small letter chi
+    &#968;, &psi;, ψ, greek small letter psi
+    &#969;, &omega;, ω, greek small letter omega
+    &#977;, &thetasym;, ϑ, greek small letter theta symbol
+    &#978;, &upsih;, ϒ, greek upsilon with hook symbol
+    &#982;, &piv;, ϖ, greek pi symbol
+    &#8226;, &bull;, •, bullet = black small circle
+    &#8230;, &hellip;, …, horizontal ellipsis = three dot leader
+    &#8242;, &prime;, ′, prime = minutes = feet
+    &#8243;, &Prime;, ″, double prime = seconds = inches
+    &#8254;, &oline;, ‾, overline = spacing overscore
+    &#8260;, &frasl;, ⁄, fraction slash
+    &#8472;, &weierp;, ℘, script capital P = power set = Weierstrass p
+    &#8465;, &image;, ℑ, blackletter capital I = imaginary part
+    &#8476;, &real;, ℜ, blackletter capital R = real part symbol
+    &#8482;, &trade;, ™, trade mark sign
+    &#8501;, &alefsym;, ℵ, alef symbol = first transfinite cardinal
+    &#8592;, &larr;, ←, leftwards arrow
+    &#8593;, &uarr;, ↑, upwards arrow
+    &#8594;, &rarr;, →, rightwards arrow
+    &#8595;, &darr;, ↓, downwards arrow
+    &#8596;, &harr;, ↔, left right arrow
+    &#8629;, &crarr;, ↵, downwards arrow with corner leftwards = carriage return
+    &#8656;, &lArr;, ⇐, leftwards double arrow
+    &#8657;, &uArr;, ⇑, upwards double arrow
+    &#8658;, &rArr;, ⇒, rightwards double arrow
+    &#8659;, &dArr;, ⇓, downwards double arrow
+    &#8660;, &hArr;, ⇔, left right double arrow
+    &#8704;, &forall;, ∀, for all
+    &#8706;, &part;, ∂, partial differential
+    &#8707;, &exist;, ∃, there exists
+    &#8709;, &empty;, ∅, empty set = null set = diameter
+    &#8711;, &nabla;, ∇, nabla = backward difference
+    &#8712;, &isin;, ∈, element of
+    &#8713;, &notin;, ∉, not an element of
+    &#8715;, &ni;, ∋, contains as member
+    &#8719;, &prod;, ∏, n-ary product = product sign
+    &#8721;, &sum;, ∑, n-ary sumation
+    &#8722;, &minus;, −, minus sign
+    &#8727;, &lowast;, ∗, asterisk operator
+    &#8730;, &radic;, √, square root = radical sign
+    &#8733;, &prop;, ∝, proportional to
+    &#8734;, &infin;, ∞, infinity
+    &#8736;, &ang;, ∠, angle
+    &#8743;, &and;, ∧, logical and = wedge
+    &#8744;, &or;, ∨, logical or = vee
+    &#8745;, &cap;, ∩, intersection = cap
+    &#8746;, &cup;, ∪, union = cup
+    &#8747;, &int;, ∫, integral
+    &#8756;, &there4;, ∴, therefore
+    &#8764;, &sim;, ∼, tilde operator = varies with = similar to
+    &#8773;, &cong;, ≅, approximately equal to
+    &#8776;, &asymp;, ≈, almost equal to = asymptotic to
+    &#8800;, &ne;, ≠, not equal to
+    &#8801;, &equiv;, ≡, identical to
+    &#8804;, &le;, ≤, less-than or equal to
+    &#8805;, &ge;, ≥, greater-than or equal to
+    &#8834;, &sub;, ⊂, subset of
+    &#8835;, &sup;, ⊃, superset of
+    &#8836;, &nsub;, ⊄, not a subset of
+    &#8838;, &sube;, ⊆, subset of or equal to
+    &#8839;, &supe;, ⊇, superset of or equal to
+    &#8853;, &oplus;, ⊕, circled plus = direct sum
+    &#8855;, &otimes;, ⊗, circled times = vector product
+    &#8869;, &perp;, ⊥, up tack = orthogonal to = perpendicular
+    &#8901;, &sdot;, ⋅, dot operator
+    &#8968;, &lceil;, ⌈, left ceiling = apl upstile
+    &#8969;, &rceil;, ⌉, right ceiling
+    &#8970;, &lfloor;, ⌊, left floor = apl downstile
+    &#8971;, &rfloor;, ⌋, right floor
+    &#9001;, &lang;, 〈, left-pointing angle bracket = bra
+    &#9002;, &rang;, 〉, right-pointing angle bracket = ket
+    &#9674;, &loz;, ◊, lozenge
+    &#9824;, &spades;, ♠, black spade suit
+    &#9827;, &clubs;, ♣, black club suit = shamrock
+    &#9829;, &hearts;, ♥, black heart suit = valentine
+    &#9830;, &diams;, ♦, black diamond suit
+    &#34;, &quot;, '"', quotation mark = APL quote
+    &#38;, &amp;, &, ampersand
+    &#60;, &lt;, <, less-than sign
+    &#62;, &gt;, >, greater-than sign
+    &#338;, &OElig;, Œ, latin capital ligature OE
+    &#339;, &oelig;, œ, latin small ligature oe
+    &#352;, &Scaron;, Š, latin capital letter S with caron
+    &#353;, &scaron;, š, latin small letter s with caron
+    &#376;, &Yuml;, Ÿ, latin capital letter Y with diaeresis
+    &#710;, &circ;, ˆ, modifier letter circumflex accent
+    &#732;, &tilde;, ˜, small tilde
+    &#8194;, &ensp;,  , en space
+    &#8195;, &emsp;,  , em space
+    &#8201;, &thinsp;,  , thin space
+    &#8204;, &zwnj;, ‌, zero width non-joiner
+    &#8205;, &zwj;, ‍, zero width joiner
+    &#8206;, &lrm;, ‎, left-to-right mark
+    &#8207;, &rlm;, ‏, right-to-left mark
+    &#8211;, &ndash;, –, en dash
+    &#8212;, &mdash;, —, em dash
+    &#8216;, &lsquo;, ‘, left single quotation mark
+    &#8217;, &rsquo;, ’, right single quotation mark
+    &#8218;, &sbquo;, ‚, single low-9 quotation mark
+    &#8220;, &ldquo;, “, left double quotation mark
+    &#8221;, &rdquo;, ”, right double quotation mark
+    &#8222;, &bdquo;, „, double low-9 quotation mark
+    &#8224;, &dagger;, †, dagger
+    &#8225;, &Dagger;, ‡, double dagger
+    &#8240;, &permil;, ‰, per mille sign
+    &#8249;, &lsaquo;, ‹, single left-pointing angle quotation mark
+    &#8250;, &rsaquo;, ›, single right-pointing angle quotation mark
+    &#8364;, &euro;, €, euro sign
+];
+
+// ****************************** Start Sub ****************************** 
+/* 
+*** Creates a HMTL tag mapping table based on name of the table and field that needs cleansing.
+Use this routine to remove HMTL tags from source data.
+@param 1 String.  
+@param 2 String. 
+@param 3 String, Optional. 
+@param 4 String, Optional. 
+
+@syntax CALL Gqvc.CleanHTMLTag('ConnectionType','DataSource',['Catalog'],['Driver']); 
+*/
+//SUB Gqvc.HTML.CleanHTMLTag(FieldName,TableName,DirectoryPath)
+	
+//	IF $(Gqvc.Macro.v.TableExists('$(TableName)')) <> -1 AND $(Gqvc.Macro.v.FieldExists('$(FieldName)')) <> -1 THEN 
+//		LET Gqvc.HTML.v.MappingTable = 'Gqvc.HMTL.Map.' & $(Gqvc.Macro.v.CleanString('$(TableName)')) & '.' & $(Gqvc.Macro.v.CleanString('$(FieldName)')); 
+//	
+//	
+//	END IF
+//	IF  <> -1 THEN 
+//	    TRACE Table: [$(TableName)], already exists. Mapping table cannot be created;
+//	    CALL Gqvc.LogError('Gqvc.LogEvent: Mapping table [$(TableName)], already exists. Mapping table cannot be created');		 
+//
+//	ELSE	 
+//	
+//	END IF
+//END SUB
 // ****************************** End Sub ****************************** 
 ///$tab Cleanup 
 // Cleanup Gqvc created temporary variables, fields and tables 
@@ -1357,6 +2148,17 @@ SUB Gqvc.CleanupVariables
 	LET Gqvc.Dir.v.Clone.ReproduceDir =;
 	SET i=;
 	SET Gqvc.Dir.v.Clone.Counter=;
+	
+	// GetDataDictionaryFromSqlDB
+	SET ConnectionType =;
+	SET DataSource =;
+	SET Catalog =;
+	SET Driver =;
+	SET XUserID =;
+	SET XPassword =;
+	
+	// Data extract
+	SET Gqvc.v.Extract.LogQVD =;
 END SUB 
 // ****************************** End Sub ****************************** 
 

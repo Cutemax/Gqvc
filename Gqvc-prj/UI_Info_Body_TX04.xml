@@ -84,8 +84,8 @@ Gqvc.Config.v.LogMode settings for Gqvc.Cleanup
 2 -&gt; Deletes all Gqvc variables except Gqvc.ChangeLog.v.Version 
 
 
-Gqvc.Config.v.LogMode settings for Gqvc.Cleanup
-Gqvc.CleanupTables defines a matrix and mode to be deleted. It is a customizable matrix and can include tables added in future</v>
+Gqvc.CleanupTables defines a mode, for Gqvc tables, to be deleted. 
+It is a customisable matrix and can include tables added in future.</v>
       </HelpText>
       <ObjectId></ObjectId>
       <ShrinkFrameToData>true</ShrinkFrameToData>
